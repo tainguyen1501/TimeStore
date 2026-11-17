@@ -34,10 +34,11 @@ DeleteObjects) and returning stored checksums. `SigningKeyCache` became a bounde
 - Done: reference notes and local paths removed; other S3 servers are named only in the benchmark material
   (`deploy/bench/compare.sh`, `docs/benchmarks/`, `docs/performance.md`, `docs/research/performance.md` §11, the
   performance rows of the backlog).
-- Add `LICENSE`, `SECURITY.md`, `CONTRIBUTING.md`, `CHANGELOG.md`; polish `README.md` (quick start, status, limits).
+- Done: `LICENSE` (AGPL-3.0; the maintainers keep the right to offer a commercial license, so contributions need a CLA).
+- Add `SECURITY.md`, `CONTRIBUTING.md` (with the CLA), `CHANGELOG.md`; polish `README.md` (quick start, status, limits).
 - Done: benchmark comparison on a 4-vCPU Linux VPS (`docs/benchmarks/2026-11-17-compare-linux-4vcpu.md`). Optional: a
   run on a dedicated 8-vCPU machine, where warp is not the limit.
-- Publish as a fresh repository with squashed history (the private history still holds the removed notes).
+- Done: fresh repository with a single initial commit (the private history stays in a separate private repository).
 
 ## Multi-node: decisions to keep now (cheap now, expensive later)
 

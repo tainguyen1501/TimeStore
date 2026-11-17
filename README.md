@@ -83,3 +83,15 @@ applies. Any other environment refuses to start until the root key pair is confi
 - `docs/performance.md`: how to benchmark, and the baselines
 - `docs/research/`: design notes per feature, with sources
 - `AGENTS.md`: conventions for contributors and coding agents
+
+## License
+
+TimeStore is licensed under the [GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0).
+
+- Running unmodified TimeStore is free for any purpose, including commercial use. Applications that talk to it over
+  the S3 API are not affected by its license.
+- If you modify TimeStore and people use your modified version over a network (for example a hosted service), you
+  must offer those users its source code under the AGPL-3.0.
+- A commercial license without these terms is available from the maintainers on request.
+
+Copyright (C) 2026 tainguyen1501 and contributors.
