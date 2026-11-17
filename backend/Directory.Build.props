@@ -6,6 +6,9 @@
         <ImplicitUsings>enable</ImplicitUsings>
         <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
         <InvariantGlobalization>true</InvariantGlobalization>
+        <!-- The version of local builds. Releases come from a tag vX.Y.Z only: the release build passes
+             -p:Version=X.Y.Z (CONTRIBUTING.md, "Releases"). Never edit this for a release. -->
+        <Version>0.0.0-dev</Version>
         <!-- Runtime Async (.NET 11). Required: verified on SDK 11.0.100 that it is OFF without this property.
              Tests/TimeStore.UnitTests/Conventions/RuntimeAsyncTests guards it. -->
         <Features>$(Features);runtime-async=on</Features>

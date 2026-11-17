@@ -38,7 +38,13 @@ DeleteObjects) and returning stored checksums. `SigningKeyCache` became a bounde
 - Done: `CONTRIBUTING.md`, `CLA.md` (based on the Apache ICLA, allows other licenses) and the CLA bot
   (`.github/workflows/cla.yml`).
 - Done: `SECURITY.md` (GitHub private vulnerability reporting; enable it in the repository settings once public).
-- Add `CHANGELOG.md`; polish `README.md` (quick start, status, limits).
+- Done: `CHANGELOG.md` (0.1.0 in `[Unreleased]` until tagged) and versions from tags only (`vX.Y.Z`, local builds
+  `0.0.0-dev`; `CONTRIBUTING.md`, "Releases").
+- CI workflow (build, tests, frontend checks, Native AOT publish) and `dependabot.yml` (monthly, grouped).
+- Release workflow on `v*` tags: check the tag format, binaries (linux-x64, linux-arm64, osx-arm64), container image
+  on ghcr.io, GitHub Release with the changelog section.
+- Polish `README.md` (quick start, status, limits); tag `v0.1.0`; make the repository public; enable private
+  vulnerability reporting.
 - Done: benchmark comparison on a 4-vCPU Linux VPS (`docs/benchmarks/2026-11-17-compare-linux-4vcpu.md`). Optional: a
   run on a dedicated 8-vCPU machine, where warp is not the limit.
 - Done: fresh repository with a single initial commit (the private history stays in a separate private repository).

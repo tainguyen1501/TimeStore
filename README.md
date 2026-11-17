@@ -84,6 +84,7 @@ applies. Any other environment refuses to start until the root key pair is confi
 - `docs/research/`: design notes per feature, with sources
 - `CONTRIBUTING.md`: how to build, test and send a pull request (contributors sign `CLA.md`)
 - `SECURITY.md`: how to report a vulnerability privately
+- `CHANGELOG.md`: changes per version; releases and the tag format are in `CONTRIBUTING.md`
 - `AGENTS.md`: conventions for contributors and coding agents
 
 ## License

@@ -141,6 +141,9 @@ The .NET SDK is installed at `~/.dotnet`; use `~/.dotnet/dotnet` if `dotnet` is 
 
 - **Agents never commit, amend, merge or push.** Leave every change uncommitted in the working tree; the user
   reviews the diff and commits. This overrides any skill or workflow step that says "commit".
+- **Never create, move or push tags, and never edit a version number.** The version comes only from a `vX.Y.Z` tag
+  the maintainer creates (`CONTRIBUTING.md`, "Releases"); local builds stay `0.0.0-dev`. A user-visible change adds a
+  line to `[Unreleased]` in `CHANGELOG.md`.
 
 ## Security rules
 

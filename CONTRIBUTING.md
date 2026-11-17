@@ -79,6 +79,37 @@ The project conventions (layers, dependency rules, error handling, naming, secur
 - Describe what changed, why, and how you tested it. Link the issue if there is one.
 - Add a line to the `Unreleased` section of `CHANGELOG.md` for user-visible changes.
 
+## Releases
+
+Releases are made by the maintainers. A **git tag is the only source of the version**: nothing in the repository is
+edited to change it. Local builds report `0.0.0-dev` (`backend/Directory.Build.props`); the release build passes the
+tag's version (`-p:Version=X.Y.Z`).
+
+**Tag format:** `v` + [Semantic Versioning](https://semver.org) `MAJOR.MINOR.PATCH`, optionally with a pre-release
+suffix.
+
+| Tag | Valid | Meaning |
+|---|---|---|
+| `v0.2.0` | ✅ | New features; before 1.0 a minor version may also contain breaking changes |
+| `v0.2.1` | ✅ | Fixes only |
+| `v1.0.0` | ✅ | Stable: API, configuration and data format stay compatible within 1.x |
+| `v0.3.0-rc.1`, `v0.3.0-beta.1` | ✅ | Pre-release (marked as such on GitHub) |
+| `0.2.0`, `v0.2`, `v2`, `release-2` | ❌ | Rejected: missing `v`, or not three numbers |
+
+Which number to raise: a fix only → PATCH; a new feature or anything a user must act on when upgrading → MINOR
+(before 1.0) or MAJOR (after 1.0).
+
+**Steps:**
+
+1. In `CHANGELOG.md`, rename `[Unreleased]` to `[X.Y.Z] - YYYY-MM-DD` and start a new empty `[Unreleased]` above it.
+2. Commit: `chore(release): X.Y.Z`.
+3. Tag that commit `vX.Y.Z` and push the tag (or create the tag in GitHub: Releases → Draft a new release).
+4. The release workflow builds the binaries and the container image with that version and publishes the GitHub
+   Release with the changelog section as its notes. A tag in the wrong format fails the workflow and publishes
+   nothing.
+
+A published tag is never moved or reused: a mistake gets a new PATCH version.
+
 ## License
 
 By contributing you agree that your contribution is licensed under the AGPL-3.0 and covered by the [CLA](CLA.md).
