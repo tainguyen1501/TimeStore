@@ -35,7 +35,9 @@ DeleteObjects) and returning stored checksums. `SigningKeyCache` became a bounde
   (`deploy/bench/compare.sh`, `docs/benchmarks/`, `docs/performance.md`, `docs/research/performance.md` §11, the
   performance rows of the backlog).
 - Done: `LICENSE` (AGPL-3.0; the maintainers keep the right to offer a commercial license, so contributions need a CLA).
-- Add `SECURITY.md`, `CONTRIBUTING.md` (with the CLA), `CHANGELOG.md`; polish `README.md` (quick start, status, limits).
+- Done: `CONTRIBUTING.md`, `CLA.md` (based on the Apache ICLA, allows other licenses) and the CLA bot
+  (`.github/workflows/cla.yml`).
+- Add `SECURITY.md`, `CHANGELOG.md`; polish `README.md` (quick start, status, limits).
 - Done: benchmark comparison on a 4-vCPU Linux VPS (`docs/benchmarks/2026-11-17-compare-linux-4vcpu.md`). Optional: a
   run on a dedicated 8-vCPU machine, where warp is not the limit.
 - Done: fresh repository with a single initial commit (the private history stays in a separate private repository).

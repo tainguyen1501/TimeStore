@@ -82,6 +82,7 @@ applies. Any other environment refuses to start until the root key pair is confi
 - `docs/roadmap.md`: phases and status
 - `docs/performance.md`: how to benchmark, and the baselines
 - `docs/research/`: design notes per feature, with sources
+- `CONTRIBUTING.md`: how to build, test and send a pull request (contributors sign `CLA.md`)
 - `AGENTS.md`: conventions for contributors and coding agents
 
 ## License
