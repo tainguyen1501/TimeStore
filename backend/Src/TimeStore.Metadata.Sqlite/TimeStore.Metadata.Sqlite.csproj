@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <!-- IMetadataStore on SQLite (raw ADO.NET, SQL migrations). References only Domain + Primitives. -->
+    <ItemGroup>
+        <PackageReference Include="Microsoft.Data.Sqlite" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <!-- Upgrade tests apply migrations one by one. -->
+        <InternalsVisibleTo Include="TimeStore.Metadata.ContractTests" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\..\Core\TimeStore.Primitives\TimeStore.Primitives.csproj" />
+        <ProjectReference Include="..\TimeStore.Domain\TimeStore.Domain.csproj" />
+    </ItemGroup>
+
+</Project>

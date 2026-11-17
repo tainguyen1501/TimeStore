@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <!-- Micro benchmarks of the request hot path (phase 5). Not a test project: run it on demand,
+         `dotnet run -c Release (project Benchmarks/TimeStore.Benchmarks), then the BenchmarkDotNet filter '*'`
+         (see docs/performance.md for the exact command), and record results there. Benchmarks run in process on the current runtime (InProcess toolchain). -->
+    <PropertyGroup>
+        <OutputType>Exe</OutputType>
+        <IsPackable>false</IsPackable>
+        <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+        <IsAotCompatible>false</IsAotCompatible>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="BenchmarkDotNet" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\..\Src\TimeStore.Protocol\TimeStore.Protocol.csproj" />
+    </ItemGroup>
+
+</Project>

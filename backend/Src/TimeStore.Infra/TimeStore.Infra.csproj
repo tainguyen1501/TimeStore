@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <!-- Service implementations. Never references a provider (Metadata.*, Blob.*): only the Server wires them. -->
+    <ItemGroup>
+        <PackageReference Include="Microsoft.Extensions.Caching.Memory" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <InternalsVisibleTo Include="TimeStore.UnitTests" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\..\Core\TimeStore.Cryptography\TimeStore.Cryptography.csproj" />
+        <ProjectReference Include="..\TimeStore.Application\TimeStore.Application.csproj" />
+    </ItemGroup>
+
+</Project>

@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <!-- Models and storage ports (IMetadataStore, IBlobStore). References only Primitives. -->
+    <ItemGroup>
+        <ProjectReference Include="..\..\Core\TimeStore.Primitives\TimeStore.Primitives.csproj" />
+    </ItemGroup>
+
+</Project>

@@ -1,0 +1,35 @@
+# .NET
+bin/
+obj/
+*.user
+.vs/
+.idea/
+TestResults/
+
+# Local data (metadata database, blobs)
+*.db
+*.db-shm
+*.db-wal
+backend/data/
+backend/Src/TimeStore.Server/data/
+
+# Secrets
+.env
+.env.*
+*.pem
+appsettings.*.local.json
+
+# Claude Code personal files
+CLAUDE.local.md
+.claude/settings.local.json
+.claude/agent-memory-local/
+
+# macOS
+.DS_Store
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
+# BenchmarkDotNet output (results are recorded in docs/performance.md)
+BenchmarkDotNet.Artifacts/

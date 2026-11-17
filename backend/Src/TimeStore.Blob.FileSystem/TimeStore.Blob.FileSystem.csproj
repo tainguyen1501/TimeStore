@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <!-- IBlobStore on the local file system. References only Domain + Primitives. -->
+    <!-- LibraryImport (DirectorySync) generates unsafe marshalling code. -->
+    <PropertyGroup>
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\..\Core\TimeStore.Primitives\TimeStore.Primitives.csproj" />
+        <ProjectReference Include="..\TimeStore.Domain\TimeStore.Domain.csproj" />
+    </ItemGroup>
+
+</Project>

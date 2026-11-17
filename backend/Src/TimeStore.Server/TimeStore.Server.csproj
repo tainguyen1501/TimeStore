@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+    <!-- Host and composition root: Kestrel (S3 port + admin port), wires services and providers. Native AOT. -->
+    <PropertyGroup>
+        <PublishAot>true</PublishAot>
+        <!-- Optimized Native AOT publish is opt-in in .NET 11. -->
+        <UseOptimizedPublish>true</UseOptimizedPublish>
+        <!-- Source-generated configuration binding in every build, not only on publish. -->
+        <EnableConfigurationBindingGenerator>true</EnableConfigurationBindingGenerator>
+        <!-- GC: Server GC with DATAS, chosen from measurements in step 5e (docs/performance.md). Both are the current
+             defaults of the Web SDK and .NET 11; stated here so a changed default cannot switch them silently.
+             Without DATAS: same throughput, 2.7x the memory; Workstation GC: same throughput, ~10% less memory. -->
+        <ServerGarbageCollector>true</ServerGarbageCollector>
+        <GarbageCollectionAdaptationMode>1</GarbageCollectionAdaptationMode>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <InternalsVisibleTo Include="TimeStore.Server.Tests" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+        <PackageReference Include="Microsoft.Extensions.FileProviders.Embedded" />
+    </ItemGroup>
+
+    <!-- The admin UI (frontend/dist, built with `pnpm build`) is embedded when it exists, under ui/ (AdminUi.cs).
+         Without it the admin port serves the API only. deploy/Dockerfile always builds it first. -->
+    <PropertyGroup>
+        <GenerateEmbeddedFilesManifest>true</GenerateEmbeddedFilesManifest>
+        <AdminUiDist>$(MSBuildThisFileDirectory)..\..\..\frontend\dist\</AdminUiDist>
+    </PropertyGroup>
+    <ItemGroup Condition="Exists('$(AdminUiDist)index.html')">
+        <EmbeddedResource Include="$(AdminUiDist)**\*" Link="ui/%(RecursiveDir)%(Filename)%(Extension)" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\TimeStore.Protocol\TimeStore.Protocol.csproj" />
+        <ProjectReference Include="..\TimeStore.Infra\TimeStore.Infra.csproj" />
+        <ProjectReference Include="..\TimeStore.Metadata.Sqlite\TimeStore.Metadata.Sqlite.csproj" />
+        <ProjectReference Include="..\TimeStore.Blob.FileSystem\TimeStore.Blob.FileSystem.csproj" />
+    </ItemGroup>
+
+</Project>

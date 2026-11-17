@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <!-- Shared primitives (Result, AppError). No dependencies; every project may reference it. -->
+
+</Project>

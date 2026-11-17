@@ -1,0 +1,113 @@
+import {
+  ArrowDown,
+  ArrowUp,
+  Check,
+  CircleAlert,
+  CircleCheck,
+  PlugZap,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  Copy,
+  Download,
+  Eye,
+  EyeOff,
+  FileCode,
+  FileText,
+  History,
+  Info,
+  KeyRound,
+  Lock,
+  type LucideIcon,
+  Minus,
+  Moon,
+  MoreVertical,
+  Pause,
+  Pencil,
+  Play,
+  Plus,
+  RefreshCw,
+  Rotate3d,
+  RotateCcw,
+  RotateCw,
+  Scaling,
+  ScrollText,
+  Search,
+  SquareTerminal,
+  Sun,
+  Trash2,
+  TriangleAlert,
+  Undo2,
+  Upload,
+  UserRound,
+  X,
+  Globe,
+  Link2,
+} from "lucide-react"
+
+import { cn } from "@/lib/utils"
+
+/**
+ * Action icons by meaning. Pages and components use these names (`<Icon name="edit" />`, `<IconButton icon="edit" />`)
+ * instead of importing an icon library, so changing an icon, or the library, happens here only.
+ */
+export const ICONS = {
+  detail: Info,
+  edit: Pencil,
+  viewYaml: FileCode,
+  delete: Trash2,
+  logs: ScrollText,
+  shell: SquareTerminal,
+  refresh: RefreshCw,
+  restart: RotateCcw,
+  scale: Scaling,
+  close: X,
+  show: Eye,
+  hide: EyeOff,
+  add: Plus,
+  addKey: KeyRound,
+  undo: Undo2,
+  copy: Copy,
+  copied: Check,
+  download: Download,
+  more: MoreVertical,
+  search: Search,
+  play: Play,
+  pause: Pause,
+  first: ChevronsLeft,
+  previous: ChevronLeft,
+  next: ChevronRight,
+  last: ChevronsRight,
+  account: UserRound,
+  themeDark: Moon,
+  themeLight: Sun,
+  warning: TriangleAlert,
+  plan: FileText,
+  apply: RotateCw,
+  history: History,
+  zoomIn: Plus,
+  zoomOut: Minus,
+  autoLayout: Rotate3d,
+  success: CircleCheck,
+  failure: CircleAlert,
+  testConnection: PlugZap,
+  upload: Upload,
+  lock: Lock,
+  moveUp: ArrowUp,
+  moveDown: ArrowDown,
+  link: Link2,
+  public: Globe,
+} satisfies Record<string, LucideIcon>
+
+export type IconName = keyof typeof ICONS
+
+/** A registry icon; decorative (hidden from screen readers): the surrounding control carries the label. */
+export function Icon({
+  name,
+  className,
+  ...props
+}: { name: IconName; className?: string } & Omit<React.SVGProps<SVGSVGElement>, "ref" | "name">) {
+  const Component = ICONS[name]
+  return <Component aria-hidden className={cn(className)} {...props} />
+}

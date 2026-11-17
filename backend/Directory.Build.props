@@ -1,0 +1,14 @@
+<Project>
+
+    <PropertyGroup>
+        <TargetFramework>net11.0</TargetFramework>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+        <InvariantGlobalization>true</InvariantGlobalization>
+        <!-- Runtime Async (.NET 11). Required: verified on SDK 11.0.100 that it is OFF without this property.
+             Tests/TimeStore.UnitTests/Conventions/RuntimeAsyncTests guards it. -->
+        <Features>$(Features);runtime-async=on</Features>
+    </PropertyGroup>
+
+</Project>

@@ -1,0 +1,10 @@
+<Project>
+
+    <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
+
+    <!-- Production code: trim and AOT analyzers on; their IL2xxx/IL3xxx warnings fail the build (TreatWarningsAsErrors). -->
+    <PropertyGroup>
+        <IsAotCompatible>true</IsAotCompatible>
+    </PropertyGroup>
+
+</Project>

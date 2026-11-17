@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <!-- Checksums, HMAC and constant-time helpers behind TimeStore interfaces. No S3 knowledge, no dependencies on other
+         TimeStore projects: reusable by other products. -->
+    <ItemGroup>
+        <PackageReference Include="System.IO.Hashing" />
+    </ItemGroup>
+
+</Project>

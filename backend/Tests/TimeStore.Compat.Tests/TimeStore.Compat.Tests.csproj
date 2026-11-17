@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <!-- Compatibility tests (phase 4): real clients (AWS CLI, rclone, s3cmd) against a running server. Opt-in
+         (TIMESTORE_COMPAT=1): they need Docker and uv and download pinned images/packages. Otherwise every test is
+         skipped and no server starts. Shares the TimeStoreServer fixture with the end-to-end tests, so
+         TIMESTORE_SERVER_BINARY runs them against the Native AOT binary too. -->
+    <PropertyGroup>
+        <OutputType>Exe</OutputType>
+        <IsPackable>false</IsPackable>
+        <IsTestProject>true</IsTestProject>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <Using Include="Xunit" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <!-- The s3-tests ratchet: tests that must keep passing (ours; the suite itself is downloaded at test time). -->
+        <None Include="Ceph\expected-pass.txt" CopyToOutputDirectory="PreserveNewest" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <Compile Include="..\TimeStore.Server.Tests\Infrastructure\TimeStoreServer.cs" Link="Infrastructure\TimeStoreServer.cs" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Microsoft.NET.Test.Sdk" />
+        <PackageReference Include="xunit.v3" />
+        <PackageReference Include="xunit.runner.visualstudio" PrivateAssets="all" />
+        <PackageReference Include="AWSSDK.S3" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\..\Src\TimeStore.Server\TimeStore.Server.csproj" />
+    </ItemGroup>
+
+</Project>

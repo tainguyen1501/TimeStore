@@ -1,0 +1,25 @@
+<Solution>
+  <Folder Name="/Core/">
+    <Project Path="Core/TimeStore.Primitives/TimeStore.Primitives.csproj" />
+    <Project Path="Core/TimeStore.Cryptography/TimeStore.Cryptography.csproj" />
+  </Folder>
+  <Folder Name="/Src/">
+    <Project Path="Src/TimeStore.Protocol/TimeStore.Protocol.csproj" />
+    <Project Path="Src/TimeStore.Domain/TimeStore.Domain.csproj" />
+    <Project Path="Src/TimeStore.Contracts/TimeStore.Contracts.csproj" />
+    <Project Path="Src/TimeStore.Application/TimeStore.Application.csproj" />
+    <Project Path="Src/TimeStore.Infra/TimeStore.Infra.csproj" />
+    <Project Path="Src/TimeStore.Metadata.Sqlite/TimeStore.Metadata.Sqlite.csproj" />
+    <Project Path="Src/TimeStore.Blob.FileSystem/TimeStore.Blob.FileSystem.csproj" />
+    <Project Path="Src/TimeStore.Server/TimeStore.Server.csproj" />
+  </Folder>
+  <Folder Name="/Benchmarks/">
+    <Project Path="Benchmarks/TimeStore.Benchmarks/TimeStore.Benchmarks.csproj" />
+  </Folder>
+  <Folder Name="/Tests/">
+    <Project Path="Tests/TimeStore.UnitTests/TimeStore.UnitTests.csproj" />
+    <Project Path="Tests/TimeStore.Metadata.ContractTests/TimeStore.Metadata.ContractTests.csproj" />
+    <Project Path="Tests/TimeStore.Server.Tests/TimeStore.Server.Tests.csproj" />
+    <Project Path="Tests/TimeStore.Compat.Tests/TimeStore.Compat.Tests.csproj" />
+  </Folder>
+</Solution>

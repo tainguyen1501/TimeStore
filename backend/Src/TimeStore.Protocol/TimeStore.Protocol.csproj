@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <!-- S3 wire protocol (SigV4, XML, error codes). References only Primitives and Cryptography: no ASP.NET, no storage. -->
+    <ItemGroup>
+        <ProjectReference Include="..\..\Core\TimeStore.Primitives\TimeStore.Primitives.csproj" />
+        <ProjectReference Include="..\..\Core\TimeStore.Cryptography\TimeStore.Cryptography.csproj" />
+    </ItemGroup>
+
+</Project>

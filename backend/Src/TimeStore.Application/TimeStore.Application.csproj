@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <!-- Service interfaces, error catalogs, validators, mappings. No ASP.NET, no providers. -->
+    <ItemGroup>
+        <ProjectReference Include="..\..\Core\TimeStore.Primitives\TimeStore.Primitives.csproj" />
+        <ProjectReference Include="..\TimeStore.Domain\TimeStore.Domain.csproj" />
+        <ProjectReference Include="..\TimeStore.Contracts\TimeStore.Contracts.csproj" />
+    </ItemGroup>
+
+</Project>

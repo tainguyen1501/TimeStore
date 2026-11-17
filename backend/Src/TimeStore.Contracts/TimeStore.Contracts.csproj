@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <!-- Request/response records of the admin API. No dependencies. -->
+
+</Project>

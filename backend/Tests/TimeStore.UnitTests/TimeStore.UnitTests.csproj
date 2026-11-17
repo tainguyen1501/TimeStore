@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <!-- Unit tests and repository conventions (project references, forbidden packages, runtime async). -->
+    <PropertyGroup>
+        <!-- xunit v3 test projects are executables. -->
+        <OutputType>Exe</OutputType>
+        <IsPackable>false</IsPackable>
+        <IsTestProject>true</IsTestProject>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <Using Include="Xunit" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Microsoft.NET.Test.Sdk" />
+        <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+        <PackageReference Include="AWSSDK.S3" />
+        <PackageReference Include="xunit.v3" />
+        <PackageReference Include="xunit.runner.visualstudio" PrivateAssets="all" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\..\Src\TimeStore.Protocol\TimeStore.Protocol.csproj" />
+        <ProjectReference Include="..\..\Src\TimeStore.Infra\TimeStore.Infra.csproj" />
+        <ProjectReference Include="..\..\Src\TimeStore.Blob.FileSystem\TimeStore.Blob.FileSystem.csproj" />
+        <!-- Services whose behaviour depends on real queries (lifecycle) run against SQLite. -->
+        <ProjectReference Include="..\..\Src\TimeStore.Metadata.Sqlite\TimeStore.Metadata.Sqlite.csproj" />
+    </ItemGroup>
+
+</Project>
