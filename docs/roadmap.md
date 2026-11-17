@@ -37,7 +37,8 @@ DeleteObjects) and returning stored checksums. `SigningKeyCache` became a bounde
 - Done: `LICENSE` (AGPL-3.0; the maintainers keep the right to offer a commercial license, so contributions need a CLA).
 - Done: `CONTRIBUTING.md`, `CLA.md` (based on the Apache ICLA, allows other licenses) and the CLA bot
   (`.github/workflows/cla.yml`).
-- Add `SECURITY.md`, `CHANGELOG.md`; polish `README.md` (quick start, status, limits).
+- Done: `SECURITY.md` (GitHub private vulnerability reporting; enable it in the repository settings once public).
+- Add `CHANGELOG.md`; polish `README.md` (quick start, status, limits).
 - Done: benchmark comparison on a 4-vCPU Linux VPS (`docs/benchmarks/2026-11-17-compare-linux-4vcpu.md`). Optional: a
   run on a dedicated 8-vCPU machine, where warp is not the limit.
 - Done: fresh repository with a single initial commit (the private history stays in a separate private repository).

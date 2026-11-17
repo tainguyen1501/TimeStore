@@ -83,6 +83,7 @@ applies. Any other environment refuses to start until the root key pair is confi
 - `docs/performance.md`: how to benchmark, and the baselines
 - `docs/research/`: design notes per feature, with sources
 - `CONTRIBUTING.md`: how to build, test and send a pull request (contributors sign `CLA.md`)
+- `SECURITY.md`: how to report a vulnerability privately
 - `AGENTS.md`: conventions for contributors and coding agents
 
 ## License
