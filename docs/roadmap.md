@@ -40,7 +40,9 @@ DeleteObjects) and returning stored checksums. `SigningKeyCache` became a bounde
 - Done: `SECURITY.md` (GitHub private vulnerability reporting; enable it in the repository settings once public).
 - Done: `CHANGELOG.md` (0.1.0 in `[Unreleased]` until tagged) and versions from tags only (`vX.Y.Z`, local builds
   `0.0.0-dev`; `CONTRIBUTING.md`, "Releases").
-- CI workflow (build, tests, frontend checks, Native AOT publish) and `dependabot.yml` (monthly, grouped).
+- Done: CI (`.github/workflows/ci.yml`: backend build + tests; frontend lint, typecheck, generated API types, build;
+  Native AOT publish for linux-x64 with the UI embedded + end-to-end tests against the binary) and
+  `.github/dependabot.yml` (monthly, grouped, minor and patch only).
 - Release workflow on `v*` tags: check the tag format, binaries (linux-x64, linux-arm64, osx-arm64), container image
   on ghcr.io, GitHub Release with the changelog section.
 - Polish `README.md` (quick start, status, limits); tag `v0.1.0`; make the repository public; enable private

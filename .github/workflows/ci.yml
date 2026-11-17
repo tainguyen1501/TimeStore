@@ -1,0 +1,124 @@
+# Builds and tests every push to main and every pull request:
+#   backend   build (warnings are errors) + all tests (unit, metadata contract, end-to-end, OpenAPI snapshot)
+#   frontend  lint, typecheck, build, generated API types match docs/api/openapi.v1.json
+#   aot       Native AOT publish for linux-x64 with the UI embedded, then the end-to-end tests against that binary
+# Actions are pinned by commit; Dependabot keeps them current.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  DOTNET_NOLOGO: "true"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "true"
+
+jobs:
+  backend:
+    name: Backend
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          global-json-file: backend/global.json
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('backend/Directory.Packages.props', 'backend/**/*.csproj') }}
+          restore-keys: nuget-${{ runner.os }}-
+      - name: Build
+        working-directory: backend
+        run: dotnet build TimeStore.slnx
+      - name: Test
+        working-directory: backend
+        run: dotnet test --solution TimeStore.slnx --no-build
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+        with:
+          package_json_file: frontend/package.json
+          cache: true
+          cache_dependency_path: frontend/pnpm-lock.yaml
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: pnpm install --frozen-lockfile
+      - name: Lint
+        run: pnpm lint
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Generated API types are current
+        run: |
+          pnpm gen:api
+          git diff --exit-code -- src/@types/api.gen.ts \
+            || { echo "::error::src/@types/api.gen.ts is stale: run 'pnpm gen:api' and commit it"; exit 1; }
+      - name: Build
+        run: pnpm build
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: admin-ui
+          path: frontend/dist/
+          retention-days: 1
+          if-no-files-found: error
+
+  aot:
+    name: Native AOT (linux-x64)
+    needs: frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: admin-ui
+          path: frontend/dist/
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          global-json-file: backend/global.json
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.nuget/packages
+          key: nuget-aot-${{ runner.os }}-${{ hashFiles('backend/Directory.Packages.props', 'backend/**/*.csproj') }}
+          restore-keys: nuget-aot-${{ runner.os }}-
+      - name: Native AOT toolchain
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends clang zlib1g-dev
+      - name: Publish
+        run: |
+          dotnet publish backend/Src/TimeStore.Server -c Release -r linux-x64 -o "$RUNNER_TEMP/publish" 2>&1 \
+            | tee "$RUNNER_TEMP/publish.log"
+          test "${PIPESTATUS[0]}" -eq 0
+          if grep -E "warning (IL|AOT)[0-9]+" "$RUNNER_TEMP/publish.log"; then
+            echo "::error::trimming or AOT warnings in the publish output"; exit 1
+          fi
+          ls -l "$RUNNER_TEMP/publish"
+      - name: End-to-end tests against the binary
+        working-directory: backend
+        env:
+          TIMESTORE_SERVER_BINARY: ${{ runner.temp }}/publish/TimeStore.Server
+        run: dotnet test --project Tests/TimeStore.Server.Tests

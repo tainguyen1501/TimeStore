@@ -47,6 +47,9 @@ cd frontend
 pnpm lint && pnpm typecheck && pnpm build
 ```
 
+CI (`.github/workflows/ci.yml`) runs the same checks on every pull request, plus a Native AOT publish for linux-x64
+with the end-to-end tests against that binary; a pull request is merged only when CI passes.
+
 Also run these when your change touches them:
 
 - **S3 behaviour:** the compatibility tests with real clients

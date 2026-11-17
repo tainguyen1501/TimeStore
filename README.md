@@ -1,5 +1,7 @@
 # TimeStore
 
+[![CI](https://github.com/tainguyen1501/TimeStore/actions/workflows/ci.yml/badge.svg)](https://github.com/tainguyen1501/TimeStore/actions/workflows/ci.yml)
+
 Self-hosted, S3-compatible object storage written in C# (.NET 11, Native AOT), with a React admin UI.
 
 - **S3 API** on port `9000`: works with AWS SDKs, `aws` CLI, rclone and `mc` (as operations land; see
