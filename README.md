@@ -102,7 +102,7 @@ The macOS binary is not notarized yet: run `xattr -dr com.apple.quarantine .` in
 
 Before you store anything that matters: keep the admin port on loopback or behind a TLS proxy, and back up
 `master.key` from the data directory separately from the data, because stored access keys cannot be decrypted
-without it. All settings: [docs/configuration.md](docs/configuration.md).
+without it ([backup and restore](docs/backup.md)). All settings: [docs/configuration.md](docs/configuration.md).
 
 ### Ports
 
@@ -219,6 +219,7 @@ conventions: [CONTRIBUTING.md](CONTRIBUTING.md).
 ## Documentation
 
 - [Configuration](docs/configuration.md): every setting, running behind a reverse proxy
+- [Backup and restore](docs/backup.md): what to back up, consistent copies, restoring, the master key
 - [User guide](docs/user-guide/README.md): the admin UI (also built into the UI)
 - [Architecture](docs/architecture.md): layers, storage model, write path, multi-node plan
 - [Performance](docs/performance.md): how to benchmark, baselines and comparisons

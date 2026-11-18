@@ -17,7 +17,7 @@ separator (`TimeStore__DataPath=/data`, `TimeStore__S3__RootSecretKey=...`). Env
 | `S3:Region` | `us-east-1` | Region clients sign with and `GetBucketLocation` reports |
 | `S3:PublicUrl` | — | How clients outside reach the S3 port (`https://s3.example.com`, no path), for the URLs and share links the admin UI shows. Default: the admin page's host with `S3Port` |
 | `S3:Domains` | `[]` | Domains for virtual-host addressing (`bucket.<domain>`); path style always works |
-| `MasterKeyFile` | `<DataPath>/master.key` | 32-byte key that encrypts stored access-key secrets; created on first start (owner-only). Back it up apart from the data: without it, stored keys are unusable |
+| `MasterKeyFile` | `<DataPath>/master.key` | 32-byte key that encrypts stored access-key secrets; created on first start (owner-only). Back it up apart from the data: without it, stored keys are unusable ([backup](backup.md)) |
 | `Lifecycle:Enabled` | `true` | Apply bucket lifecycle rules in the background |
 | `Lifecycle:IntervalMinutes` | `60` | Minutes between lifecycle runs (1–1440); rules count whole days at midnight UTC |
 | `Blobs:DeleteDelaySeconds` | `60` | How long a blob released by an overwrite, delete or abort stays readable (GETs in flight complete); 0 deletes at once |

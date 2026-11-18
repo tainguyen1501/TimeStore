@@ -53,6 +53,7 @@ The first public release, 0.1.0. A single-node, S3-compatible object storage ser
   local disk. Every write is on disk (fsync) before the server answers.
 - Secret access keys are stored encrypted with a master key (`master.key` in the data directory).
 - Benchmarks against other S3 servers: `docs/performance.md`.
+- Backup and restore guide: `docs/backup.md`.
 
 ### Known limits
 
