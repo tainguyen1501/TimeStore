@@ -8,6 +8,7 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
+  --shadow-card: var(--card-shadow);
   --font-sans: "DM Sans Variable", system-ui, -apple-system, sans-serif;
   --font-heading: "Plus Jakarta Sans Variable", system-ui, -apple-system, sans-serif;
   --font-mono: "JetBrains Mono Variable", ui-monospace, SFMono-Regular, monospace;
@@ -80,7 +81,7 @@
   color-scheme: light;
   --page: #f3f2fa;
   --background: #ffffff;
-  --main: #fcfcfe;
+  --main: #f8f8fc;
   --surface: #f7f8fc;
   --surface-hover: #f0f2fa;
   --raised: #ffffff;
@@ -88,7 +89,8 @@
   --foreground: #181a24;
   --subtle-foreground: #5c6478;
   --muted-foreground: #8c92a4;
-  --card: #fbfbfd;
+  --card: #ffffff;
+  --card-shadow: 0 0 #0000;
   --card-foreground: #181a24;
   --popover: #ffffff;
   --popover-foreground: #181a24;
@@ -174,6 +176,7 @@
   --subtle-foreground: #c5cbdc;
   --muted-foreground: #7d8499;
   --card: #191c26;
+  --card-shadow: 0 0 #0000;
   --card-foreground: #f1f3f9;
   --popover: #191c26;
   --popover-foreground: #f1f3f9;

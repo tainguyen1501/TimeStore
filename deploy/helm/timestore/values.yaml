@@ -48,9 +48,10 @@ config:
 # Built-in backups of the running server (docs/backup.md). Streaming one always works:
 #   kubectl port-forward svc/<release>-timestore-admin 9001, sign in, curl -OJ http://127.0.0.1:9001/api/v1/backups/stream
 backup:
-  # A PersistentVolumeClaim you create, apart from the data claim: backups started from the admin API are written there
-  # (mounted at /backups, Backup:Path). Created by you so it outlives the release and the data volume; any storage
-  # works (archives are plain files: NFS, Longhorn, a second disk). Empty: streamed backups only.
+  # A PersistentVolumeClaim you create, apart from the data claim: backups started from the admin API are written there,
+  # in the folder <release>/ (Backup:Path=/backups/<release>, so several releases can share one claim). Created by you so
+  # it outlives the release and the data volume; any storage works (archives are plain files: NFS, Longhorn, a second
+  # disk). Empty: streamed backups only.
   existingClaim: ""
   # Backup:Compression: zstd (.tar.zst) or none (.tar).
   compression: zstd

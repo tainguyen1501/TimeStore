@@ -88,7 +88,7 @@ function GuidePage() {
         })}
       </div>
 
-      <article className="rounded-3xl bg-card p-6 shadow-[0_10px_30px_rgba(24,26,36,0.03)] sm:p-7 dark:shadow-none">
+      <article className="rounded-3xl bg-card p-6 shadow-card sm:p-7">
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3 pb-5">
           <div className="flex items-center gap-2.5">
             <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary-soft text-primary-text">

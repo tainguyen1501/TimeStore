@@ -95,8 +95,10 @@ spec:
             - name: TimeStore__Backup__MinFreeBytes
               value: {{ .Values.backup.minFreeBytes | int64 | quote }}
             {{- if .Values.backup.existingClaim }}
+            # One folder per release: releases may share a backups claim (each removes the incomplete archives in
+            # its own folder at startup, never another release's).
             - name: TimeStore__Backup__Path
-              value: /backups
+              value: /backups/{{ .Release.Name }}
             {{- end }}
             # No diagnostics IPC socket: the root file system is read-only.
             - name: DOTNET_EnableDiagnostics

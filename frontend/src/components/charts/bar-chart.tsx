@@ -15,10 +15,12 @@ export function BarChart({
   bars,
   format,
   initialKey,
+  className,
 }: {
   bars: Bar[]
   format: (value: number) => string
   initialKey?: string
+  className?: string
 }) {
   const [active, setActive] = useState(initialKey ?? bars.at(-1)?.key)
   const max = Math.max(1, ...bars.map((b) => b.value))
@@ -26,15 +28,16 @@ export function BarChart({
   const axis = [...new Set([max, max * 0.6, max * 0.25, 0].map((v) => Math.round(v)))]
 
   return (
-    <div>
-      <div className="flex h-[210px] items-end gap-4 pt-8">
-        <div className="flex h-[160px] shrink-0 flex-col justify-between pb-1 text-[11px] text-muted-foreground tabular-nums">
+    <div className={cn("flex flex-col", className)}>
+      {/* The plot fills the height the caller gives it, at least the design's 160 px of bars. */}
+      <div className="flex min-h-[210px] flex-1 gap-4 pt-8">
+        <div className="flex shrink-0 flex-col justify-between pb-1 text-[11px] text-muted-foreground tabular-nums">
           {axis.map((value, i) => (
             <span key={i}>{format(value)}</span>
           ))}
         </div>
         <div
-          className="grid h-[160px] flex-1 items-end gap-3"
+          className="grid flex-1 gap-3"
           style={{ gridTemplateColumns: `repeat(${bars.length}, minmax(0, 1fr))` }}
         >
           {bars.map((bar, i) => {

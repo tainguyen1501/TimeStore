@@ -67,7 +67,7 @@ work from outside. With TLS on the admin ingress, the session cookie is marked `
 | `config.domains` | `[]` | `S3:Domains`, for virtual-host addressing |
 | `config.secureCookies` | `null` | `Admin:SecureCookies`; null: true when `ingress.admin` has TLS |
 | `config.sessionHours` | `24` | `Admin:SessionHours` |
-| `backup.existingClaim` | `""` | A claim you create for backups started from the admin API (mounted at `/backups`, `Backup:Path`); empty: streamed backups only |
+| `backup.existingClaim` | `""` | A claim you create for backups started from the admin API; archives go to its folder `<release>/` (`Backup:Path=/backups/<release>`); empty: streamed backups only |
 | `backup.compression` / `compressionLevel` / `minFreeBytes` | `zstd` / `3` / `1073741824` | `Backup:Compression`, `Backup:CompressionLevel` (1–19), `Backup:MinFreeBytes` |
 | `extraEnv` | `[]` | More settings as `TimeStore__Section__Key` variables ([all settings](../../../docs/configuration.md)) |
 | `persistence.enabled` | `true` | Off: an `emptyDir`, data lost on every restart |
@@ -106,7 +106,7 @@ with the namespace.
 **Stream** an archive to your machine (nothing is kept in the cluster):
 
 ```bash
-kubectl -n storage port-forward svc/ts-timestore-admin 9001:9001 &
+kubectl -n storage port-forward svc/ts-timestore-admin 9001:9001 &   # 9001 taken here? 19001:9001 and :19001 below
 ADMIN=http://127.0.0.1:9001
 curl -s -c cookies -H "Origin: $ADMIN" -H 'Content-Type: application/json' \
   -d '{"accessKeyId":"admin","secretKey":"<root secret>"}' "$ADMIN/api/v1/auth/login"
@@ -115,14 +115,15 @@ curl -fsS -b cookies -OJ "$ADMIN/api/v1/backups/stream"      # timestore-node-1-
 
 **Keep archives in the cluster:** create a claim for them yourself
 ([examples/backups-claim.yaml](examples/backups-claim.yaml): it then outlives the release and the data volume; any
-storage class works, archives are plain files) and point `backup.existingClaim` at it:
+storage class works, archives are plain files) and point `backup.existingClaim` at it. Archives go to the folder
+`<release>/` on it, so several releases (or a restored second release) can share one claim:
 
 ```bash
 kubectl -n storage apply -f examples/backups-claim.yaml
 helm upgrade ts oci://ghcr.io/tainguyen1501/charts/timestore -n storage --reuse-values \
   --set backup.existingClaim=timestore-backups
 curl -s -b cookies -H "Origin: $ADMIN" -H 'Content-Type: application/json' -d '{}' "$ADMIN/api/v1/backups"
-curl -s -b cookies "$ADMIN/api/v1/backups"                      # status, archiveName
+curl -s -b cookies "$ADMIN/api/v1/backups"                      # status, archiveName (in the claim's folder ts/)
 ```
 
 With `ReadWriteOnce` claims on node-local storage (k3s `local-path`), both claims bind to the pod's node.
@@ -134,7 +135,8 @@ claim, into an **empty** claim (an ext4 `lost+found` is fine), checks every entr
 check fails. Objects written after the backup's instant are not in the restored server.
 
 The manifests are in [examples/](examples/) (not part of the installed chart: a restore is never automatic). Each
-marks what to change (`# CHANGE`): the image version, the archive name, the release in the claim's name.
+marks what to change (`# CHANGE`): the image version, the archive (`/backups/<release>/<archiveName>`), the release
+in the claim's name.
 
 | File | What |
 |---|---|
@@ -151,23 +153,29 @@ kubectl -n storage wait --for=delete pod/ts-timestore-0 --timeout=120s
 kubectl -n storage delete pvc data-ts-timestore-0              # the data you replace: check the archive first
 kubectl -n storage apply -f examples/data-claim.yaml
 kubectl -n storage apply -f examples/restore-job.yaml
-kubectl -n storage wait --for=condition=complete job/timestore-restore --timeout=30m
-kubectl -n storage logs job/timestore-restore                  # "all checksums verified"
+until kubectl -n storage get job timestore-restore -o jsonpath='{.status.conditions[*].type}' | grep -qwE 'Complete|Failed'; do sleep 5; done
+kubectl -n storage logs job/timestore-restore                  # "all checksums verified", or why it refused
+kubectl -n storage get job timestore-restore                   # STATUS Complete: restored; Failed: refused
 kubectl -n storage delete job timestore-restore
 kubectl -n storage scale statefulset ts-timestore --replicas=1
 ```
+
+A refused restore (wrong archive name, damaged archive, a claim that is not empty) leaves the claim as it was: fix the
+cause, `kubectl delete job timestore-restore`, apply the Job again.
 
 After a lost cluster or a `helm uninstall` with its claim deleted: the same without the two scale steps, then
 `helm install` with the same release name.
 
 **B. Side by side** (the old server keeps serving until you switch): restore into the claim of a second release
 (`data-ts2-timestore-0` in both files), install it, check it, then move the ingress or DNS to it and uninstall the
-old release.
+old release. Both releases may use the same backups claim: `ts2` writes to its own folder `ts2/` on it.
 
 ```bash
 kubectl -n storage apply -f examples/data-claim.yaml           # name: data-ts2-timestore-0, instance: ts2
 kubectl -n storage apply -f examples/restore-job.yaml          # claimName: data-ts2-timestore-0
-kubectl -n storage wait --for=condition=complete job/timestore-restore --timeout=30m
+until kubectl -n storage get job timestore-restore -o jsonpath='{.status.conditions[*].type}' | grep -qwE 'Complete|Failed'; do sleep 5; done
+kubectl -n storage logs job/timestore-restore                  # "all checksums verified", or why it refused
+kubectl -n storage get job timestore-restore                   # STATUS Complete: restored; Failed: refused
 kubectl -n storage delete job timestore-restore
 helm install ts2 oci://ghcr.io/tainguyen1501/charts/timestore -n storage -f values.yaml
 ```

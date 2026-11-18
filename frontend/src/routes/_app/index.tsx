@@ -130,7 +130,7 @@ function TrafficCard({ metrics }: { metrics: MetricsResponse }) {
   ]
   const top = bars.reduce((a, b) => (b.value > a.value ? b : a))
   return (
-    <div className="rounded-3xl bg-card p-6 shadow-[0_10px_30px_rgba(24,26,36,0.03)] dark:shadow-none">
+    <div className="flex h-full flex-col rounded-3xl bg-card p-6 shadow-card">
       <div className="mb-6 flex items-center justify-between">
         <div>
           <h3 className="text-[17px] font-bold tracking-tight text-foreground">S3 Traffic</h3>
@@ -142,7 +142,12 @@ function TrafficCard({ metrics }: { metrics: MetricsResponse }) {
           {requests.total.toLocaleString()} requests
         </span>
       </div>
-      <BarChart bars={bars} initialKey={top.key} format={(value) => compactNumber(value)} />
+      <BarChart
+        className="flex-1"
+        bars={bars}
+        initialKey={top.key}
+        format={(value) => compactNumber(value)}
+      />
     </div>
   )
 }
@@ -212,7 +217,7 @@ function NodeCard({ metrics }: { metrics: MetricsResponse }) {
   ]
 
   return (
-    <div className="flex h-full flex-col rounded-3xl bg-card p-6 shadow-[0_10px_30px_rgba(24,26,36,0.03)] dark:shadow-none">
+    <div className="flex h-full flex-col rounded-3xl bg-card p-6 shadow-card">
       <div className="mb-4 flex items-center justify-between">
         <div>
           <h3 className="text-[17px] font-bold tracking-tight text-foreground">Node Status</h3>

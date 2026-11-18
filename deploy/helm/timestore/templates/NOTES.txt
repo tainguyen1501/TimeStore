@@ -27,7 +27,7 @@ WARNING: the admin UI is exposed without TLS: sign-in sends a secret key in clea
 Backups (the server keeps running; docs/backup.md):
   sign in through the admin port, then  curl -fsS -b cookies -OJ http://127.0.0.1:9001/api/v1/backups/stream
 {{- if .Values.backup.existingClaim }}
-  or POST /api/v1/backups: archives are written to the claim {{ .Values.backup.existingClaim }} (/backups)
+  or POST /api/v1/backups: archives go to the claim {{ .Values.backup.existingClaim }}, folder {{ .Release.Name }}/
 {{- end }}
   restore: see the chart README, "Restore a backup"
 {{- if not .Values.masterKey.existingSecret }}

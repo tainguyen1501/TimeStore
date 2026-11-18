@@ -1,8 +1,10 @@
 # Restores a backup archive from the backups claim into an empty data claim (chart README, "Restore a backup").
 # Run it while no TimeStore pod uses the data claim. Change the three marked values, then:
 #   kubectl -n <namespace> apply -f restore-job.yaml
-#   kubectl -n <namespace> wait --for=condition=complete job/timestore-restore --timeout=30m
-#   kubectl -n <namespace> logs job/timestore-restore      # "all checksums verified"
+#   until kubectl -n <namespace> get job timestore-restore -o jsonpath='{.status.conditions[*].type}' \
+#     | grep -qwE 'Complete|Failed'; do sleep 5; done        # (kubectl wait cannot wait for one of two conditions)
+#   kubectl -n <namespace> logs job/timestore-restore        # "all checksums verified", or why it refused
+#   kubectl -n <namespace> get job timestore-restore         # STATUS Complete: restored; Failed: refused
 #   kubectl -n <namespace> delete job timestore-restore
 apiVersion: batch/v1
 kind: Job
@@ -26,7 +28,7 @@ spec:
           args:
             - restore
             - --archive
-            - /backups/timestore-node-1-20261118T020000Z.tar.zst # CHANGE: archiveName of the backup run
+            - /backups/ts/timestore-node-1-20261118T020000Z.tar.zst # CHANGE: /backups/<release>/<archiveName>
             - --data-path
             - /data
           env:

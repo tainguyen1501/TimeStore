@@ -1,5 +1,6 @@
 # The claim for backup archives (chart README, "Back up"), apart from the data claim. Created by you, so it outlives
 # the release and the data volume. Archives are plain files: any storage class works (NFS, Longhorn, a second disk).
+# Each release writes to its own folder on it (<release>/), so several releases can share it.
 #   kubectl -n <namespace> apply -f backups-claim.yaml
 #   helm upgrade <release> oci://ghcr.io/tainguyen1501/charts/timestore -n <namespace> --reuse-values \
 #     --set backup.existingClaim=timestore-backups
