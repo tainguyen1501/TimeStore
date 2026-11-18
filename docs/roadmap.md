@@ -43,8 +43,10 @@ DeleteObjects) and returning stored checksums. `SigningKeyCache` became a bounde
 - Done: CI (`.github/workflows/ci.yml`: backend build + tests; frontend lint, typecheck, generated API types, build;
   Native AOT publish for linux-x64 with the UI embedded + end-to-end tests against the binary) and
   `.github/dependabot.yml` (monthly, grouped, minor and patch only).
-- Release workflow on `v*` tags: check the tag format, binaries (linux-x64, linux-arm64, osx-arm64), container image
-  on ghcr.io, GitHub Release with the changelog section.
+- Done: release workflow (`.github/workflows/release.yml`) on `v*` tags: tag format, on `main`, changelog section;
+  Native AOT binaries (linux-x64, linux-arm64, osx-arm64) tested end to end; multi-arch image on ghcr.io; GitHub
+  Release with archives and `SHA256SUMS`. The container build now embeds the user guide (it was missing:
+  `.dockerignore` excluded `docs/`).
 - Polish `README.md` (quick start, status, limits); tag `v0.1.0`; make the repository public; enable private
   vulnerability reporting.
 - Done: benchmark comparison on a 4-vCPU Linux VPS (`docs/benchmarks/2026-11-17-compare-linux-4vcpu.md`). Optional: a

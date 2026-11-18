@@ -1,0 +1,306 @@
+# Publishes a release when a vX.Y.Z tag is pushed (CONTRIBUTING.md, "Releases"):
+#   prepare   the tag format, the tagged commit is on main, release notes = the [X.Y.Z] section of CHANGELOG.md
+#   ui        the admin UI build, embedded into every binary
+#   binaries  Native AOT for linux-x64, linux-arm64, osx-arm64 with the tag's version; end-to-end tests on each binary
+#   image     the container image per architecture on native runners, pushed by digest to ghcr.io
+#   manifest  after the binaries passed: one multi-arch image tagged X.Y.Z, X.Y and latest (not for pre-releases)
+#   release   the GitHub Release with the archives, SHA256SUMS and the changelog section
+# A tag in the wrong format, off main or without a changelog section fails in `prepare` and publishes nothing.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  DOTNET_NOLOGO: "true"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "true"
+  IMAGE: ghcr.io/${{ github.repository_owner }}/timestore
+
+jobs:
+  prepare:
+    name: Check the tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.tag.outputs.version }}
+      prerelease: ${{ steps.tag.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Tag format and branch
+        id: tag
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          if [[ ! "$TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z][0-9A-Za-z.-]*)?$ ]]; then
+            echo "::error::Tag '$TAG' is not vMAJOR.MINOR.PATCH[-pre] (CONTRIBUTING.md, Releases)"; exit 1
+          fi
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::Tag '$TAG' points to a commit that is not on main"; exit 1
+          fi
+          version="${TAG#v}"
+          prerelease=false
+          [[ "$version" == *-* ]] && prerelease=true
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
+      - name: Release notes from CHANGELOG.md
+        env:
+          VERSION: ${{ steps.tag.outputs.version }}
+          PRERELEASE: ${{ steps.tag.outputs.prerelease }}
+        run: |
+          section() {
+            awk -v v="$1" '
+              index($0, "## [" v "]") == 1 { found = 1; next }
+              found && /^## \[/ { exit }
+              found { print }
+            ' CHANGELOG.md
+          }
+          section "$VERSION" > notes.md
+          # A pre-release without its own section ships what is in [Unreleased].
+          if [[ "$PRERELEASE" == "true" ]] && ! grep -q '[^[:space:]]' notes.md; then
+            section "Unreleased" > notes.md
+          fi
+          if ! grep -q '[^[:space:]]' notes.md; then
+            echo "::error::CHANGELOG.md has no '## [$VERSION]' section: rename [Unreleased] first"; exit 1
+          fi
+          {
+            echo
+            echo "### Container image"
+            echo
+            echo '```'
+            echo "docker pull $IMAGE:$VERSION"
+            echo '```'
+          } >> notes.md
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-notes
+          path: notes.md
+          retention-days: 7
+
+  ui:
+    name: Admin UI
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+        with:
+          package_json_file: frontend/package.json
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: admin-ui
+          path: frontend/dist/
+          retention-days: 7
+          if-no-files-found: error
+
+  binaries:
+    name: Binary (${{ matrix.rid }})
+    needs: [prepare, ui]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - rid: linux-x64
+            os: ubuntu-latest
+          - rid: linux-arm64
+            os: ubuntu-24.04-arm
+          - rid: osx-arm64
+            os: macos-latest
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      RID: ${{ matrix.rid }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: admin-ui
+          path: frontend/dist/
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          global-json-file: backend/global.json
+      - name: Native AOT toolchain
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends clang zlib1g-dev
+      - name: Publish
+        run: |
+          out="$RUNNER_TEMP/timestore"
+          dotnet publish backend/Src/TimeStore.Server -c Release -r "$RID" -p:Version="$VERSION" -o "$out" 2>&1 \
+            | tee "$RUNNER_TEMP/publish.log"
+          test "${PIPESTATUS[0]}" -eq 0
+          if grep -E "warning (IL|AOT)[0-9]+" "$RUNNER_TEMP/publish.log"; then
+            echo "::error::trimming or AOT warnings in the publish output"; exit 1
+          fi
+          # Ship the binary and its native SQLite only: no symbols, no development settings (they hold the dev key pair).
+          rm -f "$out"/*.pdb "$out"/*.dbg "$out"/appsettings.Development.json
+          rm -rf "$out"/*.dSYM
+          cp LICENSE README.md CHANGELOG.md "$out"/
+          ls -l "$out"
+      - name: End-to-end tests against the binary
+        working-directory: backend
+        env:
+          TIMESTORE_SERVER_BINARY: ${{ runner.temp }}/timestore/TimeStore.Server
+        run: dotnet test --project Tests/TimeStore.Server.Tests
+      - name: Archive
+        run: |
+          name="timestore-$VERSION-$RID"
+          mv "$RUNNER_TEMP/timestore" "$RUNNER_TEMP/$name"
+          tar -czf "$RUNNER_TEMP/$name.tar.gz" -C "$RUNNER_TEMP" "$name"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: binary-${{ matrix.rid }}
+          path: ${{ runner.temp }}/timestore-${{ needs.prepare.outputs.version }}-${{ matrix.rid }}.tar.gz
+          retention-days: 7
+          if-no-files-found: error
+
+  image:
+    name: Image (${{ matrix.arch }})
+    needs: prepare
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - arch: amd64
+            os: ubuntu-latest
+          - arch: arm64
+            os: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ env.IMAGE }}
+          labels: |
+            org.opencontainers.image.title=TimeStore
+            org.opencontainers.image.description=Self-hosted, S3-compatible object storage server
+            org.opencontainers.image.licenses=AGPL-3.0-only
+            org.opencontainers.image.version=${{ needs.prepare.outputs.version }}
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: deploy/Dockerfile
+          platforms: linux/${{ matrix.arch }}
+          build-args: VERSION=${{ needs.prepare.outputs.version }}
+          labels: ${{ steps.meta.outputs.labels }}
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
+      - name: Keep the digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/digests"
+          touch "$RUNNER_TEMP/digests/${DIGEST#sha256:}"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: digest-${{ matrix.arch }}
+          path: ${{ runner.temp }}/digests/*
+          retention-days: 1
+          if-no-files-found: error
+
+  manifest:
+    name: Image tags
+    needs: [prepare, binaries, image]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: digest-*
+          path: ${{ runner.temp }}/digests
+          merge-multiple: true
+      - id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ env.IMAGE }}
+          # X.Y.Z always; X.Y and latest only for releases without a pre-release suffix.
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+          flavor: latest=auto
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Create the multi-arch image
+        working-directory: ${{ runner.temp }}/digests
+        env:
+          META: ${{ steps.meta.outputs.json }}
+        run: |
+          # shellcheck disable=SC2046
+          docker buildx imagetools create \
+            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$META") \
+            $(printf "$IMAGE@sha256:%s " *)
+          docker buildx imagetools inspect "$IMAGE:$(jq -r '.labels["org.opencontainers.image.version"]' <<< "$META")"
+
+  release:
+    name: GitHub Release
+    needs: [prepare, binaries, manifest]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: binary-*
+          path: dist
+          merge-multiple: true
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-notes
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
+        run: |
+          (cd dist && sha256sum ./*.tar.gz > SHA256SUMS)
+          cat dist/SHA256SUMS
+          flags=(--verify-tag --title "TimeStore $VERSION" --notes-file notes.md)
+          if [[ "$PRERELEASE" == "true" ]]; then flags+=(--prerelease); else flags+=(--latest); fi
+          gh release create "$TAG" "${flags[@]}" dist/*.tar.gz dist/SHA256SUMS

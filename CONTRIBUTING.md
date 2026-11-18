@@ -107,9 +107,18 @@ Which number to raise: a fix only → PATCH; a new feature or anything a user mu
 1. In `CHANGELOG.md`, rename `[Unreleased]` to `[X.Y.Z] - YYYY-MM-DD` and start a new empty `[Unreleased]` above it.
 2. Commit: `chore(release): X.Y.Z`.
 3. Tag that commit `vX.Y.Z` and push the tag (or create the tag in GitHub: Releases → Draft a new release).
-4. The release workflow builds the binaries and the container image with that version and publishes the GitHub
-   Release with the changelog section as its notes. A tag in the wrong format fails the workflow and publishes
-   nothing.
+4. The release workflow (`.github/workflows/release.yml`) does the rest:
+   - checks the tag format, that the tagged commit is on `main`, and that `CHANGELOG.md` has a `## [X.Y.Z]` section
+     (a pre-release such as `v0.3.0-rc.1` may skip step 1: without its own section it ships the `[Unreleased]` notes);
+   - builds the Native AOT binaries (linux-x64, linux-arm64, osx-arm64) with that version and runs the end-to-end
+     tests against each of them;
+   - builds the container image for amd64 and arm64 and publishes it as `ghcr.io/tainguyen1501/timestore:X.Y.Z`,
+     plus `X.Y` and `latest` for releases without a pre-release suffix;
+   - publishes the GitHub Release: the changelog section as notes, `timestore-X.Y.Z-<rid>.tar.gz` archives and
+     `SHA256SUMS`.
+
+   If a check fails, nothing is published. Image tags and the Release are created only after every binary passed its
+   tests.
 
 A published tag is never moved or reused: a mistake gets a new PATCH version.
 

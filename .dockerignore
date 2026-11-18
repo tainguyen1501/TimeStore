@@ -3,6 +3,7 @@
 **/node_modules/
 frontend/dist/
 docs/
+!docs/user-guide/
 .git/
 **/*.db
 **/data/
