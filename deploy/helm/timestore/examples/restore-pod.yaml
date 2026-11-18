@@ -1,0 +1,44 @@
+# A temporary pod to restore an archive that is on your machine (a streamed backup) into an empty data claim
+# (chart README, "Restore a backup"). Run it while no TimeStore pod uses the data claim. Change the marked values, then:
+#   kubectl -n <namespace> apply -f restore-pod.yaml
+#   kubectl -n <namespace> wait --for=condition=Ready pod/timestore-restore --timeout=120s
+#   kubectl -n <namespace> cp <archive>.tar.zst timestore-restore:/in/archive.tar.zst
+#   kubectl -n <namespace> exec timestore-restore -- /app/TimeStore.Server restore --archive /in/archive.tar.zst --data-path /data
+#   kubectl -n <namespace> delete pod timestore-restore
+apiVersion: v1
+kind: Pod
+metadata:
+  name: timestore-restore
+spec:
+  restartPolicy: Never
+  securityContext: # as the chart's pod: the restored files belong to the user TimeStore runs as
+    runAsNonRoot: true
+    runAsUser: 1654
+    runAsGroup: 1654
+    fsGroup: 1654
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: restore
+      image: ghcr.io/tainguyen1501/timestore:0.1.0 # CHANGE: the release's version, or newer
+      command: [sleep, "3600"] # waits for the copy and the exec; the pod ends after an hour at most
+      env:
+        - name: DOTNET_EnableDiagnostics
+          value: "0"
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop:
+            - ALL
+      volumeMounts:
+        - name: data
+          mountPath: /data
+        - name: in
+          mountPath: /in
+  volumes:
+    - name: data
+      persistentVolumeClaim:
+        claimName: data-ts-timestore-0 # CHANGE: data-<release>-timestore-0, created empty (data-claim.yaml)
+    - name: in
+      emptyDir: {} # the copied archive; gone with the pod

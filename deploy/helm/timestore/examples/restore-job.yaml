@@ -1,0 +1,53 @@
+# Restores a backup archive from the backups claim into an empty data claim (chart README, "Restore a backup").
+# Run it while no TimeStore pod uses the data claim. Change the three marked values, then:
+#   kubectl -n <namespace> apply -f restore-job.yaml
+#   kubectl -n <namespace> wait --for=condition=complete job/timestore-restore --timeout=30m
+#   kubectl -n <namespace> logs job/timestore-restore      # "all checksums verified"
+#   kubectl -n <namespace> delete job timestore-restore
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: timestore-restore
+spec:
+  backoffLimit: 0 # a refused restore (damaged archive, non-empty claim) fails the same way on every try
+  template:
+    spec:
+      restartPolicy: Never
+      securityContext: # as the chart's pod: the restored files belong to the user TimeStore runs as
+        runAsNonRoot: true
+        runAsUser: 1654
+        runAsGroup: 1654
+        fsGroup: 1654
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: restore
+          image: ghcr.io/tainguyen1501/timestore:0.1.0 # CHANGE: the release's version, or newer
+          args:
+            - restore
+            - --archive
+            - /backups/timestore-node-1-20261118T020000Z.tar.zst # CHANGE: archiveName of the backup run
+            - --data-path
+            - /data
+          env:
+            - name: DOTNET_EnableDiagnostics
+              value: "0"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: backups
+              mountPath: /backups
+              readOnly: true
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: data-ts-timestore-0 # CHANGE: data-<release>-timestore-0, created empty (data-claim.yaml)
+        - name: backups
+          persistentVolumeClaim:
+            claimName: timestore-backups # the chart's backup.existingClaim

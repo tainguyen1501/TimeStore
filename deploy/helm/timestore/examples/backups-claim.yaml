@@ -1,0 +1,16 @@
+# The claim for backup archives (chart README, "Back up"), apart from the data claim. Created by you, so it outlives
+# the release and the data volume. Archives are plain files: any storage class works (NFS, Longhorn, a second disk).
+#   kubectl -n <namespace> apply -f backups-claim.yaml
+#   helm upgrade <release> oci://ghcr.io/tainguyen1501/charts/timestore -n <namespace> --reuse-values \
+#     --set backup.existingClaim=timestore-backups
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: timestore-backups
+spec:
+  accessModes:
+    - ReadWriteOnce
+  # storageClassName: nfs-client
+  resources:
+    requests:
+      storage: 50Gi # room for the archives you keep (each about the size of the data, less with zstd)

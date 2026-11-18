@@ -113,18 +113,12 @@ curl -s -c cookies -H "Origin: $ADMIN" -H 'Content-Type: application/json' \
 curl -fsS -b cookies -OJ "$ADMIN/api/v1/backups/stream"      # timestore-node-1-<time>.tar.zst
 ```
 
-**Keep archives in the cluster:** create a claim for them yourself (it then outlives the release and the data
-volume; any storage class works, archives are plain files) and point `backup.existingClaim` at it:
+**Keep archives in the cluster:** create a claim for them yourself
+([examples/backups-claim.yaml](examples/backups-claim.yaml): it then outlives the release and the data volume; any
+storage class works, archives are plain files) and point `backup.existingClaim` at it:
 
 ```bash
-kubectl -n storage apply -f - <<EOF
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata: { name: timestore-backups }
-spec:
-  accessModes: [ReadWriteOnce]
-  resources: { requests: { storage: 50Gi } }
-EOF
+kubectl -n storage apply -f examples/backups-claim.yaml
 helm upgrade ts oci://ghcr.io/tainguyen1501/charts/timestore -n storage --reuse-values \
   --set backup.existingClaim=timestore-backups
 curl -s -b cookies -H "Origin: $ADMIN" -H 'Content-Type: application/json' -d '{}' "$ADMIN/api/v1/backups"
@@ -137,7 +131,17 @@ With `ReadWriteOnce` claims on node-local storage (k3s `local-path`), both claim
 
 A restore replaces the whole data directory with the archive's instant. It runs while no TimeStore pod uses the data
 claim, into an **empty** claim (an ext4 `lost+found` is fine), checks every entry, and removes what it wrote if a
-check fails. Objects written after the backup's instant are not in the restored server. Pick one of two ways.
+check fails. Objects written after the backup's instant are not in the restored server.
+
+The manifests are in [examples/](examples/) (not part of the installed chart: a restore is never automatic). Each
+marks what to change (`# CHANGE`): the image version, the archive name, the release in the claim's name.
+
+| File | What |
+|---|---|
+| [data-claim.yaml](examples/data-claim.yaml) | The empty data claim, named `data-<release>-timestore-0` so the release uses it |
+| [restore-job.yaml](examples/restore-job.yaml) | A Job that restores an archive from the backups claim |
+| [restore-pod.yaml](examples/restore-pod.yaml) | A pod to restore an archive from your machine (`kubectl cp`, then `exec`) |
+| [backups-claim.yaml](examples/backups-claim.yaml) | The backups claim (`backup.existingClaim`) |
 
 **A. In place** (the S3 API is down until the pod is back):
 
@@ -145,98 +149,33 @@ check fails. Objects written after the backup's instant are not in the restored 
 kubectl -n storage scale statefulset ts-timestore --replicas=0
 kubectl -n storage wait --for=delete pod/ts-timestore-0 --timeout=120s
 kubectl -n storage delete pvc data-ts-timestore-0              # the data you replace: check the archive first
-kubectl -n storage apply -f - <<EOF
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata: { name: data-ts-timestore-0 }
-spec:
-  accessModes: [ReadWriteOnce]
-  resources: { requests: { storage: 20Gi } }                 # as persistence.size
-EOF
-kubectl -n storage apply -f restore-job.yaml                   # below, data claim data-ts-timestore-0
+kubectl -n storage apply -f examples/data-claim.yaml
+kubectl -n storage apply -f examples/restore-job.yaml
 kubectl -n storage wait --for=condition=complete job/timestore-restore --timeout=30m
 kubectl -n storage logs job/timestore-restore                  # "all checksums verified"
 kubectl -n storage delete job timestore-restore
 kubectl -n storage scale statefulset ts-timestore --replicas=1
 ```
 
-After a lost cluster or a `helm uninstall` with its claim deleted: create the claim, run the Job, then `helm install`
-with the same release name.
+After a lost cluster or a `helm uninstall` with its claim deleted: the same without the two scale steps, then
+`helm install` with the same release name.
 
-**B. Side by side** (the old server keeps serving until you switch): restore into the claim of a second release,
-install it, check it, then move the ingress or DNS to it and uninstall the old release.
+**B. Side by side** (the old server keeps serving until you switch): restore into the claim of a second release
+(`data-ts2-timestore-0` in both files), install it, check it, then move the ingress or DNS to it and uninstall the
+old release.
 
 ```bash
-kubectl -n storage apply -f - <<EOF
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata: { name: data-ts2-timestore-0 }
-spec:
-  accessModes: [ReadWriteOnce]
-  resources: { requests: { storage: 20Gi } }
-EOF
-kubectl -n storage apply -f restore-job.yaml                   # data claim data-ts2-timestore-0
+kubectl -n storage apply -f examples/data-claim.yaml           # name: data-ts2-timestore-0, instance: ts2
+kubectl -n storage apply -f examples/restore-job.yaml          # claimName: data-ts2-timestore-0
 kubectl -n storage wait --for=condition=complete job/timestore-restore --timeout=30m
+kubectl -n storage delete job timestore-restore
 helm install ts2 oci://ghcr.io/tainguyen1501/charts/timestore -n storage -f values.yaml
 ```
 
-**The restore Job** runs the image's `restore` command with the same user and security settings as the pod, reading
-the archive from the backups claim:
-
-```yaml
-# restore-job.yaml
-apiVersion: batch/v1
-kind: Job
-metadata: { name: timestore-restore }
-spec:
-  backoffLimit: 0
-  template:
-    spec:
-      restartPolicy: Never
-      securityContext:
-        runAsNonRoot: true
-        runAsUser: 1654
-        runAsGroup: 1654
-        fsGroup: 1654
-        seccompProfile: { type: RuntimeDefault }
-      containers:
-        - name: restore
-          image: ghcr.io/tainguyen1501/timestore:0.1.0            # the release's version, or newer
-          args: [restore, --archive, /backups/timestore-node-1-20261118T020000Z.tar.zst, --data-path, /data]
-          env: [{ name: DOTNET_EnableDiagnostics, value: "0" }]
-          securityContext:
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            capabilities: { drop: [ALL] }
-          volumeMounts:
-            - { name: data, mountPath: /data }
-            - { name: backups, mountPath: /backups, readOnly: true }
-      volumes:
-        - { name: data, persistentVolumeClaim: { claimName: data-ts-timestore-0 } }
-        - { name: backups, persistentVolumeClaim: { claimName: timestore-backups } }
-```
-
-**An archive on your machine** (a streamed backup): start a pod with the image and the data claim, copy the archive
-in, restore, remove the pod.
+**An archive on your machine** (a streamed backup): instead of the Job, the pod, then copy and restore:
 
 ```bash
-kubectl -n storage apply -f - <<EOF
-apiVersion: v1
-kind: Pod
-metadata: { name: timestore-restore }
-spec:
-  restartPolicy: Never
-  securityContext: { runAsNonRoot: true, runAsUser: 1654, runAsGroup: 1654, fsGroup: 1654 }
-  containers:
-    - name: restore
-      image: ghcr.io/tainguyen1501/timestore:0.1.0
-      command: [sleep, "3600"]
-      env: [{ name: DOTNET_EnableDiagnostics, value: "0" }]
-      volumeMounts: [{ name: data, mountPath: /data }, { name: in, mountPath: /in }]
-  volumes:
-    - { name: data, persistentVolumeClaim: { claimName: data-ts-timestore-0 } }
-    - { name: in, emptyDir: {} }
-EOF
+kubectl -n storage apply -f examples/restore-pod.yaml
 kubectl -n storage wait --for=condition=Ready pod/timestore-restore --timeout=120s
 kubectl -n storage cp timestore-node-1-20261118T020000Z.tar.zst timestore-restore:/in/archive.tar.zst
 kubectl -n storage exec timestore-restore -- /app/TimeStore.Server restore --archive /in/archive.tar.zst --data-path /data

@@ -4,3 +4,5 @@
 *.tmp
 .git/
 ci/
+# Restore manifests: documentation, applied by hand (README "Restore a backup"), not part of the package.
+examples/

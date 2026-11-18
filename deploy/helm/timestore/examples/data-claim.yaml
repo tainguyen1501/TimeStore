@@ -1,0 +1,18 @@
+# An empty data claim to restore into, under the name the chart's StatefulSet uses (data-<release>-timestore-0), so
+# the release finds it (chart README, "Restore a backup"). Create it before the restore, and before `helm install` when
+# the release does not exist yet.
+#   kubectl -n <namespace> apply -f data-claim.yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: data-ts-timestore-0 # CHANGE: data-<release>-timestore-0
+  labels: # the labels the StatefulSet puts on its own claim
+    app.kubernetes.io/name: timestore
+    app.kubernetes.io/instance: ts # CHANGE: the release name
+spec:
+  accessModes:
+    - ReadWriteOnce
+  # storageClassName: local-path   # as persistence.storageClass (empty: the cluster's default)
+  resources:
+    requests:
+      storage: 20Gi # as persistence.size, or more

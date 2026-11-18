@@ -151,5 +151,6 @@ jobs:
             > "$RUNNER_TEMP/render/ephemeral.yaml"
       - name: Kubernetes schemas
         run: |
+          cp deploy/helm/timestore/examples/*.yaml "$RUNNER_TEMP/render/"   # the restore manifests of the README
           docker run --rm -v "$RUNNER_TEMP/render:/render:ro" ghcr.io/yannh/kubeconform:v0.6.7 \
             -strict -summary -kubernetes-version 1.31.0 /render
