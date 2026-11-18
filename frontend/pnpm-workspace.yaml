@@ -1,2 +1,8 @@
 # Supply-chain policy: only install package versions published at least 24 hours ago.
 minimumReleaseAge: 1440
+
+# Security overrides; remove each one when its parent package ships the fix itself.
+overrides:
+  # GHSA-g3hv-75wg-m249 (minimatch < 11.0.1): the shadcn CLI pulls ts-morph 26 -> @ts-morph/common 0.27 -> minimatch 10.
+  # @ts-morph/common 0.29 already uses minimatch ^11 with the same API.
+  "@ts-morph/common>minimatch": ^11.0.8
