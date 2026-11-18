@@ -2,7 +2,9 @@
 
 **Dashboard** shows a card per bucket (objects, size and its share of all stored bytes), **S3 Traffic** (requests by
 type since the server started) and **Node Status** (stored bytes, disk, request rate, latency, errors, unfinished
-uploads), refreshed every 10 seconds. The right panel's ring shows the storage used per bucket.
+uploads), refreshed every 10 seconds. The right panel's ring is the data disk: a slice per
+bucket (the four largest, then the others together), other files on the same disk in grey, and free space left empty;
+the figures under it give the three sizes.
 
 **Metrics** starts with four cards, each with its last 15 minutes as a line:
 

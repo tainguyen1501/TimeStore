@@ -53,7 +53,7 @@ and bucket policies allow. For example:
 Out of scope:
 
 - deployments that ignore the documented setup, such as the admin port on a public address without a TLS proxy
-  (`AdminAddress`, `Admin:SecureCookies` in the README) or the development key pair in production;
+  (`AdminAddress`, `Admin:SecureCookies` in `docs/configuration.md`) or the development key pair in production;
 - denial of service through request volume alone (put a rate limiter or proxy in front);
 - missing hardening headers or best practices without a concrete attack;
 - vulnerabilities in dependencies that TimeStore does not use in an exploitable way (report those upstream).

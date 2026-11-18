@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- TimeStore mark (src/components/shared/logo.tsx): the bucket fills ~80% of the tile at favicon size. -->
+  <rect width="32" height="32" rx="7.5" fill="#6c5ce7"/>
+<defs><clipPath id="b"><path d="M3.5 6.5 5.6 18.6A2.2 2.2 0 0 0 7.8 20.5h8.4a2.2 2.2 0 0 0 2.2-1.9L20.5 6.5z"/></clipPath></defs>
+  <g transform="translate(-2 -2.45) scale(1.5)">
+    <g clip-path="url(#b)"><rect width="24" height="24" fill="#cdd1e2"/><ellipse cx="9.4" cy="12" rx="8.6" ry="13" fill="#f7f8fc"/></g>
+    <ellipse cx="12" cy="6.5" rx="8.5" ry="2.4" fill="#ffffff"/>
+    <ellipse cx="12" cy="6.6" rx="6.9" ry="1.45" fill="#a9b0c9"/>
+    <path d="M6.3 10.2 7.3 17" fill="none" stroke="#ffffff" stroke-width="1" stroke-linecap="round"/>
+    <path d="M13.2 9.2 9.7 14.2h2.6l-0.9 3.6 3.6-5h-2.6z" fill="#6c5ce7"/>
+  </g>
+</svg>

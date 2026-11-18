@@ -154,6 +154,11 @@
   --palette-amber: #f4a63a;
   --palette-slate: #6e778c;
   --palette-violet: #6c5ce7;
+  /* The logo (components/shared/logo.tsx): a white and grey bucket; the same in both themes, on the violet tile. */
+  --logo-body: #f7f8fc;
+  --logo-shade: #cdd1e2;
+  --logo-rim: #ffffff;
+  --logo-opening: #a9b0c9;
 }
 
 .dark {

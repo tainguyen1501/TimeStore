@@ -19,8 +19,11 @@ import { formatBytes } from "@/lib/format"
 import { ADMIN_ROLES } from "@/services/api/auth-service"
 import { useThemeStore } from "@/store/theme"
 
-/** "Other" in the ring; a bucket uses its own palette colour (the same as its card). */
+/** "N more" buckets in the ring; a bucket uses its own palette colour (the same as its card). */
 const OTHER_COLOR = "var(--chart-5)"
+/** Space on the same disk used by anything but TimeStore; free space is the ring's empty track. */
+const OTHER_FILES_COLOR = "color-mix(in oklab, var(--muted-foreground) 45%, transparent)"
+const OTHER_FILES_KEY = "other-files"
 const TOP = 4
 
 const ROLE_LABELS: Record<string, string> = {
@@ -121,7 +124,32 @@ function ProfileRow() {
   )
 }
 
-/** The design's "Storage Details", by bucket: the four largest and the rest. */
+/** One part of the data disk under the ring: a colour key, a label and its size. */
+function DiskPart({
+  label,
+  value,
+  children,
+}: {
+  label: string
+  value: number
+  children: React.ReactNode
+}) {
+  return (
+    <div className="min-w-0">
+      <dt className="flex items-center gap-1.5 text-muted-foreground">
+        {children}
+        <span className="truncate">{label}</span>
+      </dt>
+      <dd className="mt-0.5 font-semibold text-subtle-foreground tabular-nums">{formatBytes(value)}</dd>
+    </div>
+  )
+}
+
+/**
+ * The design's "Storage Details": a ring of the data disk (each of the four largest buckets, the other buckets
+ * together, other files on the disk; free space is the empty track), then the buckets as cards. Without disk figures
+ * the ring splits the stored bytes between the buckets.
+ */
 function StorageDetails() {
   const { data: metrics, isLoading } = useGetMetrics()
   const storage = metrics?.storage
@@ -143,6 +171,17 @@ function StorageDetails() {
     storage?.diskTotalBytes != null && storage.diskFreeBytes != null
       ? storage.diskTotalBytes - storage.diskFreeBytes
       : null
+  const disk =
+    storage && storage.diskTotalBytes != null && storage.diskFreeBytes != null && diskUsed != null
+      ? {
+          total: storage.diskTotalBytes,
+          free: storage.diskFreeBytes,
+          otherFiles: Math.max(0, diskUsed - storage.totalBytes),
+        }
+      : null
+  const segments = rows.map((row) => ({ key: row.name, value: row.totalBytes, color: row.color }))
+  if (disk && disk.otherFiles > 0)
+    segments.push({ key: OTHER_FILES_KEY, value: disk.otherFiles, color: OTHER_FILES_COLOR })
 
   return (
     <div className="flex flex-col">
@@ -161,31 +200,39 @@ function StorageDetails() {
       ) : (
         <Donut
           className="my-3"
-          segments={rows.map((row) => ({ key: row.name, value: row.totalBytes, color: row.color }))}
+          segments={segments}
+          total={disk?.total}
           center={formatBytes(storage.totalBytes)}
           caption={
-            storage.diskTotalBytes != null && diskUsed != null
-              ? `of ${formatBytes(storage.diskTotalBytes, 0)} disk`
+            disk
+              ? `of ${formatBytes(disk.total, 0)} disk`
               : `${storage.objects.toLocaleString()} objects`
           }
         />
       )}
 
-      {rows.length > 0 && (
-        <div className="mt-3 mb-5 grid grid-cols-2 gap-x-3 gap-y-2 px-1">
-          {rows.map((row) => (
-            <span
-              key={row.name}
-              className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground"
-            >
-              <span
-                className="size-2.5 shrink-0 rounded-full"
-                style={{ backgroundColor: row.color }}
-              />
-              <span className="truncate">{row.name}</span>
+      {disk && storage && (
+        <dl className="mt-3 mb-5 grid grid-cols-3 gap-2 px-1 text-[11px]">
+          <DiskPart label="Buckets" value={storage.totalBytes}>
+            <span className="flex -space-x-1">
+              {(rows.length ? rows.slice(0, 3) : [{ name: "none", color: "var(--primary)" }]).map(
+                (row) => (
+                  <span
+                    key={row.name}
+                    className="size-2.5 rounded-full ring-2 ring-background"
+                    style={{ backgroundColor: row.color }}
+                  />
+                )
+              )}
             </span>
-          ))}
-        </div>
+          </DiskPart>
+          <DiskPart label="Other files" value={disk.otherFiles}>
+            <span className="size-2.5 rounded-full" style={{ backgroundColor: OTHER_FILES_COLOR }} />
+          </DiskPart>
+          <DiskPart label="Free" value={disk.free}>
+            <span className="size-2.5 rounded-full bg-muted" />
+          </DiskPart>
+        </dl>
       )}
 
       <div className="space-y-3">

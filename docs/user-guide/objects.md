@@ -5,6 +5,11 @@ sorted by name, size or object count; the bar on a card is its share of all stor
 objects. Folders are parts of object keys separated by `/` (`photos/2026/cat.jpg` sits in folder `photos/2026/`); the
 bar above the list shows where you are, and each part opens that level.
 
+**+ Create Bucket** (admins) asks for a name of 3–63 characters: lowercase letters, digits, hyphens and dots, starting and
+ending with a letter or digit. What you type is fixed as you go: letters become lowercase, accents are removed
+(`Ảnh` → `anh`), spaces and underscores become hyphens, and other characters are dropped. A name that still breaks a
+rule (too short, ending with a hyphen, looking like an IP address) is explained under the field.
+
 ## Looking at objects
 
 - Objects show as a list (default), a grid with image thumbnails, or a table: the switch at the right of the bar.
@@ -46,8 +51,9 @@ The preview window shows how the object is reached outside this UI:
 
 - **New folder** creates an empty folder (a zero-byte object named `folder/`, as S3 consoles do), so it stays
   visible while empty.
-- The bin icon of a row deletes that object (after a confirmation). To delete several, point at a row's icon and tick
-  its box (the boxes stay visible once something is selected), then **Delete**. Deleting a folder deletes every object under it: type
+- The bin icon of a row deletes that object (after a confirmation). To delete several, tick their boxes, then
+  **Delete**. In the table the boxes are always shown; in the list and the grid a box appears when you point at a row
+  (always on a touch screen, and on every row once something is selected). Deleting a folder deletes every object under it: type
   `permanently delete` to confirm. This cannot be undone.
 
 Viewers can browse, open details and download only.

@@ -1,8 +1,9 @@
 import { useRef } from "react"
 import { Link, useLocation } from "@tanstack/react-router"
-import { UploadCloud, X, Zap } from "lucide-react"
+import { UploadCloud, X } from "lucide-react"
 
 import { RightPanel } from "@/components/layout/right-panel"
+import { LogoTile } from "@/components/shared/logo"
 import { UploadPanel } from "@/components/objects/upload-panel"
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet"
@@ -71,9 +72,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
         {/* Brand lockup */}
         <div className="flex items-center justify-between px-2 pt-1 pb-8">
           <Link to="/" onClick={onNavigate} className="flex items-center gap-2.5">
-            <span className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-[0_6px_16px_rgba(108,92,231,0.35)]">
-              <Zap className="size-4 fill-current" />
-            </span>
+            <LogoTile />
             <span className="font-heading text-[19px] font-extrabold tracking-tight whitespace-nowrap text-foreground">
               TimeStore
             </span>

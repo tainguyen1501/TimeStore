@@ -1,5 +1,6 @@
 import type { LucideIcon } from "lucide-react"
-import { Zap } from "lucide-react"
+
+import { LogoTile } from "@/components/shared/logo"
 
 /**
  * Full-page frame of /login in the app's style: the lavender page, the brand lockup, one borderless rounded card.
@@ -20,9 +21,7 @@ export function AuthLayout({
     <div className="flex min-h-svh w-full flex-col items-center justify-between bg-page p-5 text-foreground">
       <header className="flex w-full items-center justify-between px-2 py-2">
         <div className="flex items-center gap-2.5">
-          <span className="flex size-8 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-[0_6px_16px_rgba(108,92,231,0.35)]">
-            <Zap className="size-4 fill-current" />
-          </span>
+          <LogoTile />
           <span className="font-heading text-[19px] font-extrabold tracking-tight">TimeStore</span>
         </div>
         <span className="inline-flex items-center gap-1.5 rounded-full bg-background px-3 py-1.5 text-xs font-medium text-muted-foreground">

@@ -256,14 +256,18 @@ type EntryProps = ObjectBrowserProps & { entry: Entry }
 
 const relative = (prefix: string, name: string) => name.slice(prefix.length)
 
-/** Selection box: shown on hover, always once anything is selected (admins only). */
+/**
+ * Selection box (admins only). In the table it is always shown, like the header's "select all"; in the list and the
+ * grid it appears on hover, and always once anything is selected or on a touch screen (no hover there).
+ */
 function SelectBox({
   entry,
   prefix,
   selected,
   onToggle,
   className,
-}: EntryProps & { className?: string }) {
+  alwaysVisible = false,
+}: EntryProps & { className?: string; alwaysVisible?: boolean }) {
   const checked = selected.has(entry.name)
   return (
     <Checkbox
@@ -273,9 +277,10 @@ function SelectBox({
       onClick={(event) => event.stopPropagation()}
       className={cn(
         "transition-opacity",
-        !checked &&
+        !alwaysVisible &&
+          !checked &&
           selected.size === 0 &&
-          "opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
+          "opacity-0 group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100",
         className
       )}
     />
@@ -430,7 +435,7 @@ function TableRow({
     >
       {canWrite && (
         <td className="px-3 py-2.5">
-          <SelectBox {...props} />
+          <SelectBox {...props} alwaysVisible />
         </td>
       )}
       <td className="px-3 py-2.5">

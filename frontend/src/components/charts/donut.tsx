@@ -10,12 +10,14 @@ const GAP = 4
 const MIN_ARC = 12
 
 /**
- * Arc lengths and offsets: segments share the ring (minus the gaps) in proportion to their values; a tiny value still
- * gets `MIN_ARC`, taken back from the largest arc.
+ * Arc lengths and offsets: segments share the ring (minus the gaps) in proportion to their values, or to `whole` when
+ * it is given (the rest of the ring stays empty track); a tiny value still gets `MIN_ARC`, taken back from the
+ * largest arc.
  */
-function layoutArcs(segments: DonutSegment[], circumference: number) {
+function layoutArcs(segments: DonutSegment[], circumference: number, whole?: number) {
   const visible = segments.filter((s) => s.value > 0)
-  const total = visible.reduce((sum, s) => sum + s.value, 0)
+  const sum = visible.reduce((acc, s) => acc + s.value, 0)
+  const total = whole != null && whole >= sum ? whole : sum
   const usable = circumference - visible.length * GAP
   const lengths = visible.map((s) =>
     total > 0 ? Math.max(MIN_ARC, (s.value / total) * usable) : 0
@@ -30,24 +32,27 @@ function layoutArcs(segments: DonutSegment[], circumference: number) {
 }
 
 /**
- * The design's storage ring: rounded segments on a quiet track, a big number in the middle. Segments share the whole
- * ring in proportion to their values (a small value still gets a visible arc).
+ * The design's storage ring: rounded segments on a quiet track, a big number in the middle. Segments share the ring
+ * in proportion to their values, or are parts of `total` (a disk's size) with the free part left as track; a small
+ * value still gets a visible arc.
  */
 export function Donut({
   segments,
+  total,
   center,
   caption,
   className,
   onSelect,
 }: {
   segments: DonutSegment[]
+  total?: number
   center: React.ReactNode
   caption?: React.ReactNode
   className?: string
   onSelect?: (key: string) => void
 }) {
   const circumference = 2 * Math.PI * RADIUS
-  const arcs = layoutArcs(segments, circumference)
+  const arcs = layoutArcs(segments, circumference, total)
 
   return (
     <div className={cn("relative flex items-center justify-center", className)}>

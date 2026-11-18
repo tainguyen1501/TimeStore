@@ -47,8 +47,10 @@ DeleteObjects) and returning stored checksums. `SigningKeyCache` became a bounde
   Native AOT binaries (linux-x64, linux-arm64, osx-arm64) tested end to end; multi-arch image on ghcr.io; GitHub
   Release with archives and `SHA256SUMS`. The container build now embeds the user guide (it was missing:
   `.dockerignore` excluded `docs/`).
-- Polish `README.md` (quick start, status, limits); tag `v0.1.0`; make the repository public; enable private
-  vulnerability reporting.
+- Done: README for the public release (why, quick start, what works, benchmarks on Linux and macOS with the method
+  and caveats); settings moved to `docs/configuration.md`.
+- Left: an admin UI screenshot in the README; a release candidate (`v0.1.0-rc.1`); `v0.1.0`; make the repository
+  public; rulesets for `main` and `cla-signatures`; private vulnerability reporting; ghcr package visibility public.
 - Done: benchmark comparison on a 4-vCPU Linux VPS (`docs/benchmarks/2026-11-17-compare-linux-4vcpu.md`). Optional: a
   run on a dedicated 8-vCPU machine, where warp is not the limit.
 - Done: fresh repository with a single initial commit (the private history stays in a separate private repository).
