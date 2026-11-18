@@ -81,6 +81,10 @@ work from outside. With TLS on the admin ingress, the session cookie is marked `
 
 ## Notes
 
+- **GitOps tools (Argo CD, TimeOps, Flux with `helm template`)** render without access to the cluster, so a generated
+  root secret cannot be looked up and comes out different on every render. Set `rootCredentials.secretKey` (from your
+  secret store) or `rootCredentials.existingSecret` there; then the Secret and the pod stay stable between syncs.
+
 - **Data stays when you uninstall.** `helm uninstall` keeps the claim `data-<release>-timestore-0` (StatefulSet claims
   are never deleted by Helm), so a reinstall with the same release name finds the same buckets, objects and access
   keys. A generated root secret is replaced on reinstall; use `rootCredentials.existingSecret` to keep one root key

@@ -25,8 +25,10 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
       annotations:
-        # Restart the pod when the chart's own root-key Secret changes.
-        checksum/root: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        # Restart the pod when the configured root key pair changes. Built from the values, not from the rendered
+        # Secret: a generated secret is random on every `helm template` (Argo CD, TimeOps), which would restart the
+        # pod on every sync.
+        checksum/root: {{ printf "%s|%s|%s" .Values.rootCredentials.existingSecret .Values.rootCredentials.accessKey .Values.rootCredentials.secretKey | sha256sum }}
         {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
