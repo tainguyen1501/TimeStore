@@ -1,0 +1,17 @@
+apiVersion: v2
+name: timestore
+description: Self-hosted, S3-compatible object storage server (single node)
+type: application
+# The release workflow sets both to the tag's version (vX.Y.Z -> X.Y.Z); keep them equal by hand otherwise.
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.25.0-0"
+home: https://github.com/tainguyen1501/TimeStore
+sources:
+  - https://github.com/tainguyen1501/TimeStore
+keywords:
+  - s3
+  - object-storage
+  - storage
+annotations:
+  licenses: AGPL-3.0-only

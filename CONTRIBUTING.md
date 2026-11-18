@@ -114,8 +114,9 @@ Which number to raise: a fix only → PATCH; a new feature or anything a user mu
      tests against each of them;
    - builds the container image for amd64 and arm64 and publishes it as `ghcr.io/tainguyen1501/timestore:X.Y.Z`,
      plus `X.Y` and `latest` for releases without a pre-release suffix;
-   - publishes the GitHub Release: the changelog section as notes, `timestore-X.Y.Z-<rid>.tar.gz` archives and
-     `SHA256SUMS`.
+   - packages the Helm chart at version `X.Y.Z` and pushes it to `oci://ghcr.io/tainguyen1501/charts/timestore`;
+   - publishes the GitHub Release: the changelog section as notes, `timestore-X.Y.Z-<rid>.tar.gz` archives, the chart
+     and `SHA256SUMS`.
 
    If a check fails, nothing is published. Image tags and the Release are created only after every binary passed its
    tests.

@@ -1,0 +1,35 @@
+{{- with .Values.ingress.s3 }}
+{{- if .enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "timestore.fullname" $ }}-s3
+  labels:
+    {{- include "timestore.labels" $ | nindent 4 }}
+  {{- with .annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- if .tlsSecret }}
+  tls:
+    - hosts:
+        - {{ .host | quote }}
+      secretName: {{ .tlsSecret }}
+  {{- end }}
+  rules:
+    - host: {{ required "ingress.s3.host is required" .host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "timestore.fullname" $ }}-s3
+                port:
+                  name: s3
+{{- end }}
+{{- end }}

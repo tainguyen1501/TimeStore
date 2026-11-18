@@ -54,6 +54,7 @@ The first public release, 0.1.0. A single-node, S3-compatible object storage ser
 - Secret access keys are stored encrypted with a master key (`master.key` in the data directory).
 - Benchmarks against other S3 servers: `docs/performance.md`.
 - Backup and restore guide: `docs/backup.md`.
+- Helm chart for Kubernetes (`deploy/helm/timestore`, published as `oci://ghcr.io/tainguyen1501/charts/timestore`).
 
 ### Known limits
 

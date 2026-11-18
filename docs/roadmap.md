@@ -49,7 +49,11 @@ DeleteObjects) and returning stored checksums. `SigningKeyCache` became a bounde
   `.dockerignore` excluded `docs/`).
 - Done: README for the public release (why, quick start, what works, benchmarks on Linux and macOS with the method
   and caveats); settings moved to `docs/configuration.md`.
-- Left: an admin UI screenshot in the README; a release candidate (`v0.1.0-rc.1`); `v0.1.0`; make the repository
+- Done: Helm chart (`deploy/helm/timestore`): one-replica StatefulSet with its volume, generated or existing root
+  keys, optional master-key Secret, S3 and admin services and ingresses, non-root read-only pod, `helm test`; CI lints,
+  renders and validates it; releases push it to `oci://ghcr.io/<owner>/charts`. Verified on k3s 1.31 (install,
+  `helm test`, ingress, upgrade, pod restart, uninstall and reinstall keep the data; Helm 3.16 and 4).
+- Left: a release candidate (`v0.1.0-rc.1`); `v0.1.0`; make the repository
   public; rulesets for `main` and `cla-signatures`; private vulnerability reporting; ghcr package visibility public.
 - Done: benchmark comparison on a 4-vCPU Linux VPS (`docs/benchmarks/2026-11-17-compare-linux-4vcpu.md`). Optional: a
   run on a dedicated 8-vCPU machine, where warp is not the limit.

@@ -4,7 +4,8 @@
 #   binaries  Native AOT for linux-x64, linux-arm64, osx-arm64 with the tag's version; end-to-end tests on each binary
 #   image     the container image per architecture on native runners, pushed by digest to ghcr.io
 #   manifest  after the binaries passed: one multi-arch image tagged X.Y.Z, X.Y and latest (not for pre-releases)
-#   release   the GitHub Release with the archives, SHA256SUMS and the changelog section
+#   chart     the Helm chart at version X.Y.Z, pushed to oci://ghcr.io/<owner>/charts
+#   release   the GitHub Release with the archives, the chart, SHA256SUMS and the changelog section
 # A tag in the wrong format, off main or without a changelog section fails in `prepare` and publishes nothing.
 name: Release
 
@@ -79,6 +80,12 @@ jobs:
             echo
             echo '```'
             echo "docker pull $IMAGE:$VERSION"
+            echo '```'
+            echo
+            echo "### Helm chart"
+            echo
+            echo '```'
+            echo "helm install timestore oci://ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/charts/timestore --version $VERSION"
             echo '```'
           } >> notes.md
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -275,9 +282,45 @@ jobs:
             $(printf "$IMAGE@sha256:%s " *)
           docker buildx imagetools inspect "$IMAGE:$(jq -r '.labels["org.opencontainers.image.version"]' <<< "$META")"
 
+  chart:
+    name: Helm chart
+    needs: [prepare, manifest]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: v4.3.1
+      - name: Package
+        run: |
+          helm lint deploy/helm/timestore
+          helm package deploy/helm/timestore --version "$VERSION" --app-version "$VERSION" -d "$RUNNER_TEMP/chart"
+      - name: Push to ghcr.io
+        env:
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          echo "$REGISTRY_TOKEN" | helm registry login ghcr.io --username "$REGISTRY_USER" --password-stdin
+          helm push "$RUNNER_TEMP/chart/timestore-$VERSION.tgz" "oci://ghcr.io/${OWNER,,}/charts"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: chart
+          path: ${{ runner.temp }}/chart/timestore-${{ needs.prepare.outputs.version }}.tgz
+          retention-days: 7
+          if-no-files-found: error
+
   release:
     name: GitHub Release
-    needs: [prepare, binaries, manifest]
+    needs: [prepare, binaries, manifest, chart]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -290,6 +333,10 @@ jobs:
           merge-multiple: true
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
+          name: chart
+          path: dist
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
           name: release-notes
       - name: Publish
         env:
@@ -299,8 +346,8 @@ jobs:
           VERSION: ${{ needs.prepare.outputs.version }}
           PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
         run: |
-          (cd dist && sha256sum ./*.tar.gz > SHA256SUMS)
+          (cd dist && sha256sum ./*.tar.gz ./*.tgz > SHA256SUMS)
           cat dist/SHA256SUMS
           flags=(--verify-tag --title "TimeStore $VERSION" --notes-file notes.md)
           if [[ "$PRERELEASE" == "true" ]]; then flags+=(--prerelease); else flags+=(--latest); fi
-          gh release create "$TAG" "${flags[@]}" dist/*.tar.gz dist/SHA256SUMS
+          gh release create "$TAG" "${flags[@]}" dist/*.tar.gz dist/*.tgz dist/SHA256SUMS

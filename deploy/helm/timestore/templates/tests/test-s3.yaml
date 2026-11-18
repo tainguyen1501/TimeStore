@@ -1,0 +1,56 @@
+# helm test: a bucket, one object written, read back and compared, then both deleted, through the S3 service.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "timestore.fullname" . }}-test-s3
+  labels:
+    {{- include "timestore.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: test
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: s3
+      image: {{ .Values.tests.image }}
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+            - ALL
+      env:
+        - name: HOME
+          value: /tmp
+        - name: AWS_ACCESS_KEY_ID
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "timestore.rootSecretName" . }}
+              key: {{ .Values.rootCredentials.accessKeyKey }}
+        - name: AWS_SECRET_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "timestore.rootSecretName" . }}
+              key: {{ .Values.rootCredentials.secretKeyKey }}
+        - name: AWS_DEFAULT_REGION
+          value: {{ .Values.config.region | quote }}
+        - name: ENDPOINT
+          value: http://{{ include "timestore.fullname" . }}-s3:{{ .Values.service.s3.port }}
+      command:
+        - sh
+        - -ec
+        - |
+          bucket="helm-test-$(date +%s)"
+          aws configure set default.s3.addressing_style path
+          aws --endpoint-url "$ENDPOINT" s3 mb "s3://$bucket"
+          echo "hello from helm test" > /tmp/in.txt
+          aws --endpoint-url "$ENDPOINT" s3 cp /tmp/in.txt "s3://$bucket/check.txt"
+          aws --endpoint-url "$ENDPOINT" s3 cp "s3://$bucket/check.txt" /tmp/out.txt
+          cmp /tmp/in.txt /tmp/out.txt
+          aws --endpoint-url "$ENDPOINT" s3 rm "s3://$bucket/check.txt"
+          aws --endpoint-url "$ENDPOINT" s3 rb "s3://$bucket"
+          echo "S3 round trip OK"

@@ -46,7 +46,7 @@ backend/                              .NET solution (TimeStore.slnx, global.json
   Tests/TimeStore.Server.Tests        S3 port conventions (error map) and, from step 1e, the running server via the AWS SDK
   Tests/TimeStore.Compat.Tests        opt-in (TIMESTORE_COMPAT=1): AWS CLI, rclone, s3cmd against the running server
 frontend/                             React UI (Vite, TS, TanStack, shadcn on Base UI); see .claude/rules/frontend.md
-deploy/                               Dockerfile, compose (later)
+deploy/                               Dockerfile, bench/ (benchmark harness), helm/timestore (Helm chart)
 docs/                                 roadmap.md, architecture.md, database.md (update with every schema change)
   research/                           design notes per feature (S3 behaviour, decisions, sources)
   api/                                admin API reference for the frontend

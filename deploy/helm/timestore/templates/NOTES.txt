@@ -1,0 +1,32 @@
+TimeStore {{ .Chart.AppVersion }} is starting (one pod, data on {{ if .Values.persistence.enabled }}the claim data-{{ include "timestore.fullname" . }}-0{{ else }}an emptyDir: lost on restart{{ end }}).
+
+Root key pair (S3 access key and admin sign-in):
+  kubectl -n {{ .Release.Namespace }} get secret {{ include "timestore.rootSecretName" . }} -o jsonpath='{.data.{{ .Values.rootCredentials.accessKeyKey }}}' | base64 -d; echo
+  kubectl -n {{ .Release.Namespace }} get secret {{ include "timestore.rootSecretName" . }} -o jsonpath='{.data.{{ .Values.rootCredentials.secretKeyKey }}}' | base64 -d; echo
+
+S3 API:
+{{- if .Values.ingress.s3.enabled }}
+  {{ include "timestore.publicUrl" . }}
+{{- else }}
+  inside the cluster: http://{{ include "timestore.fullname" . }}-s3.{{ .Release.Namespace }}.svc:{{ .Values.service.s3.port }}
+  from this machine:  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "timestore.fullname" . }}-s3 9000:{{ .Values.service.s3.port }}
+{{- end }}
+
+Admin UI:
+{{- if .Values.ingress.admin.enabled }}
+  {{ ternary "https" "http" (not (empty .Values.ingress.admin.tlsSecret)) }}://{{ .Values.ingress.admin.host }}
+{{- else }}
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "timestore.fullname" . }}-admin 9001:{{ .Values.service.admin.port }}
+  then open http://localhost:9001
+{{- end }}
+{{- if and .Values.ingress.admin.enabled (not .Values.ingress.admin.tlsSecret) }}
+
+WARNING: the admin UI is exposed without TLS: sign-in sends a secret key in clear text. Set ingress.admin.tlsSecret.
+{{- end }}
+{{- if not .Values.masterKey.existingSecret }}
+
+The master key is kept inside the data volume. For production, create it as a Secret and keep a copy apart from the
+data (masterKey.existingSecret, docs/backup.md).
+{{- end }}
+
+Check the installation: helm test {{ .Release.Name }} -n {{ .Release.Namespace }}

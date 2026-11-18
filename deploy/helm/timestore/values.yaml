@@ -1,0 +1,150 @@
+# TimeStore Helm chart. TimeStore runs as one pod (single node: SQLite metadata with one writer, blobs on the pod's
+# volume). Settings not listed here go through `extraEnv` as TimeStore__Section__Key variables (docs/configuration.md).
+
+image:
+  repository: ghcr.io/tainguyen1501/timestore
+  # Defaults to the chart's appVersion.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# The root (break-glass) key pair: signs S3 requests and signs in to the admin UI.
+rootCredentials:
+  # A Secret you manage, with the keys named below. When set, accessKey and secretKey are ignored.
+  existingSecret: ""
+  accessKeyKey: accessKey
+  secretKeyKey: secretKey
+  # Used when existingSecret is empty. Leave secretKey empty to have one generated (32 characters) and kept across
+  # upgrades; read it with the command printed after install. A reinstall after `helm uninstall` generates a new one
+  # (the data and other access keys stay): use existingSecret for a root key pair that never changes.
+  accessKey: admin
+  secretKey: ""
+
+# The 32-byte key that encrypts stored access-key secrets. Without a Secret here, TimeStore creates it inside the data
+# volume on first start, so every volume backup also carries the key. For production, create it once and keep a copy
+# apart from the data (docs/backup.md):
+#   head -c 32 /dev/urandom > master.key
+#   kubectl create secret generic timestore-master-key --from-file=master.key
+masterKey:
+  existingSecret: ""
+  key: master.key
+
+config:
+  # S3:Region: the region clients sign with.
+  region: us-east-1
+  # S3:PublicUrl: how clients outside reach the S3 port, for the URLs and share links the admin UI shows. Empty: taken
+  # from ingress.s3 when it is enabled.
+  publicUrl: ""
+  # S3:Domains: domains for virtual-host addressing (bucket.<domain>).
+  domains: []
+  # Admin:SecureCookies: mark the session cookie Secure. Empty (null): true when ingress.admin has TLS.
+  secureCookies: null
+  # Admin:SessionHours: lifetime of an admin sign-in (1–720).
+  sessionHours: 24
+
+# More environment variables, e.g. { name: TimeStore__Multipart__AbandonAfterDays, value: "3" }.
+extraEnv: []
+
+persistence:
+  # Keep this on: without a volume, every restart loses all data.
+  enabled: true
+  # Empty: the cluster's default class (local-path on k3s). Use local or block storage, never NFS or SMB: SQLite
+  # needs a local file system for its locks and fsync.
+  storageClass: ""
+  accessModes:
+    - ReadWriteOnce
+  size: 20Gi
+  annotations: {}
+  # Use an existing PersistentVolumeClaim instead of the StatefulSet's own.
+  existingClaim: ""
+
+service:
+  s3:
+    type: ClusterIP
+    port: 9000
+    # Only with type NodePort or LoadBalancer.
+    nodePort: null
+    annotations: {}
+  admin:
+    # Keep ClusterIP: reach the admin UI through ingress.admin (with TLS) or kubectl port-forward.
+    type: ClusterIP
+    port: 9001
+    annotations: {}
+
+ingress:
+  s3:
+    enabled: false
+    className: ""
+    # Large uploads: lift the proxy's body limit, e.g. for ingress-nginx:
+    #   nginx.ingress.kubernetes.io/proxy-body-size: "0"
+    #   nginx.ingress.kubernetes.io/proxy-request-buffering: "off"
+    # Traefik (the k3s default) has no body limit by default.
+    annotations: {}
+    host: s3.example.com
+    # Secret with the certificate; empty: plain HTTP.
+    tlsSecret: ""
+  admin:
+    enabled: false
+    className: ""
+    annotations: {}
+    host: storage.example.com
+    tlsSecret: ""
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    memory: 1Gi
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1654
+  runAsGroup: 1654
+  fsGroup: 1654
+  fsGroupChangePolicy: OnRootMismatch
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+startupProbe:
+  httpGet:
+    path: /health/live
+    port: s3
+  periodSeconds: 2
+  failureThreshold: 60
+livenessProbe:
+  httpGet:
+    path: /health/live
+    port: s3
+  periodSeconds: 10
+  failureThreshold: 3
+readinessProbe:
+  httpGet:
+    path: /health/live
+    port: s3
+  periodSeconds: 5
+  failureThreshold: 2
+
+# Time for in-flight requests and the last group commit before the pod stops.
+terminationGracePeriodSeconds: 30
+
+podAnnotations: {}
+podLabels: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+priorityClassName: ""
+
+# `helm test`: creates a bucket, writes, reads and deletes an object through the S3 service.
+tests:
+  image: amazon/aws-cli:2.17.0

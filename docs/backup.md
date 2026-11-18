@@ -45,7 +45,7 @@ tar -czf timestore-$(date +%Y%m%d-%H%M).tar.gz -C /srv/timestore/data .
 
 Take an atomic snapshot of the file system or disk that holds the data directory, with the server running: ZFS
 (`zfs snapshot`), btrfs (`btrfs subvolume snapshot`), LVM (`lvcreate --snapshot`), a cloud disk snapshot, or a
-Kubernetes `VolumeSnapshot`.
+Kubernetes `VolumeSnapshot` of the claim `data-<release>-timestore-0` (Helm chart).
 
 A snapshot is as safe as a power cut, and TimeStore is built to survive one: an object's data is written and fsynced
 before its metadata commit, SQLite runs in WAL mode with `synchronous=FULL`, and blob files are never changed in
@@ -93,6 +93,60 @@ zfs destroy tank/timestore@nightly
 
 A backup restores into the same TimeStore version or a newer one; newer versions migrate the metadata at startup.
 Restoring into an older version is not supported.
+
+## Kubernetes (Helm chart)
+
+Volume snapshots (option 2) are the easiest way when your CSI driver supports them. Without snapshots, the stop, copy,
+start way works with plain `kubectl`; these steps were tested end to end on k3s (backup, `helm uninstall`, claim
+deleted, restore, data and access keys back). Replace `ts` with your release name and `storage` with the namespace.
+
+**Back up** (the S3 API is down for the copy):
+
+```bash
+kubectl -n storage scale statefulset ts-timestore --replicas=0
+kubectl -n storage wait --for=delete pod/ts-timestore-0 --timeout=120s
+helper() {   # a pod with the data claim mounted at /data
+  kubectl -n storage apply -f - <<EOF
+apiVersion: v1
+kind: Pod
+metadata: { name: $1 }
+spec:
+  restartPolicy: Never
+  containers:
+    - name: c
+      image: alpine:3.20
+      command: ["sleep", "3600"]
+      volumeMounts: [{ name: data, mountPath: /data }]
+  volumes: [{ name: data, persistentVolumeClaim: { claimName: data-ts-timestore-0 } }]
+EOF
+  kubectl -n storage wait --for=condition=Ready pod/$1 --timeout=120s
+}
+helper backup
+kubectl -n storage exec backup -- tar -czf - -C /data . > timestore-$(date +%Y%m%d-%H%M).tgz
+kubectl -n storage delete pod backup
+kubectl -n storage scale statefulset ts-timestore --replicas=1
+```
+
+**Restore** into a new cluster or after the claim was lost: create the claim under the StatefulSet's name before you
+install, fill it, then install with the same release name.
+
+```bash
+kubectl -n storage apply -f - <<EOF
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: { name: data-ts-timestore-0 }
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: { requests: { storage: 20Gi } }
+EOF
+helper restore
+kubectl -n storage exec -i restore -- sh -c 'tar -xzf - -C /data && chown -R 1654:1654 /data' < timestore-20261118-0200.tgz
+kubectl -n storage delete pod restore
+helm install ts oci://ghcr.io/tainguyen1501/charts/timestore --version 0.1.0 -n storage -f values.yaml
+```
+
+Without `rootCredentials.existingSecret` the reinstall generates a new root secret; the data, the other access keys
+and their secrets come back with the volume (or with `masterKey.existingSecret`).
 
 ## Before you upgrade
 

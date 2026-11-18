@@ -104,6 +104,18 @@ Before you store anything that matters: keep the admin port on loopback or behin
 `master.key` from the data directory separately from the data, because stored access keys cannot be decrypted
 without it ([backup and restore](docs/backup.md)). All settings: [docs/configuration.md](docs/configuration.md).
 
+### Kubernetes (Helm)
+
+```bash
+helm install timestore oci://ghcr.io/tainguyen1501/charts/timestore --version 0.1.0 \
+  --namespace storage --create-namespace
+helm test timestore -n storage      # bucket, write, read, delete through the S3 service
+```
+
+One pod (a StatefulSet with its own volume), a generated root key pair, the S3 and admin services, and optional
+ingresses with TLS. Production values (existing Secrets, the master key, storage class, ingress) and every option:
+[deploy/helm/timestore](deploy/helm/timestore/README.md).
+
 ### Ports
 
 TimeStore listens on two ports, so admin traffic never shares the S3 path:

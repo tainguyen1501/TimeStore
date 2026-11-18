@@ -2,6 +2,7 @@
 #   backend   build (warnings are errors) + all tests (unit, metadata contract, end-to-end, OpenAPI snapshot)
 #   frontend  lint, typecheck, build, generated API types match docs/api/openapi.v1.json
 #   aot       Native AOT publish for linux-x64 with the UI embedded, then the end-to-end tests against that binary
+#   helm      the chart in deploy/helm/timestore: lint, render with default and full values, Kubernetes schemas
 # Actions are pinned by commit; Dependabot keeps them current.
 name: CI
 
@@ -122,3 +123,32 @@ jobs:
         env:
           TIMESTORE_SERVER_BINARY: ${{ runner.temp }}/publish/TimeStore.Server
         run: dotnet test --project Tests/TimeStore.Server.Tests
+
+  helm:
+    name: Helm chart
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: v4.3.1
+      - name: Lint
+        run: helm lint deploy/helm/timestore
+      - name: Render
+        run: |
+          mkdir -p "$RUNNER_TEMP/render"
+          helm template t deploy/helm/timestore --kube-version 1.31.0 > "$RUNNER_TEMP/render/default.yaml"
+          helm template t deploy/helm/timestore --kube-version 1.31.0 \
+            --set 'ingress.s3.enabled=true,ingress.s3.host=s3.example.org,ingress.s3.tlsSecret=s3-tls' \
+            --set 'ingress.admin.enabled=true,ingress.admin.tlsSecret=admin-tls' \
+            --set 'rootCredentials.existingSecret=root,masterKey.existingSecret=master-key,config.domains[0]=s3.example.org' \
+            > "$RUNNER_TEMP/render/full.yaml"
+          helm template t deploy/helm/timestore --kube-version 1.31.0 --set persistence.enabled=false \
+            > "$RUNNER_TEMP/render/ephemeral.yaml"
+      - name: Kubernetes schemas
+        run: |
+          docker run --rm -v "$RUNNER_TEMP/render:/render:ro" ghcr.io/yannh/kubeconform:v0.6.7 \
+            -strict -summary -kubernetes-version 1.31.0 /render

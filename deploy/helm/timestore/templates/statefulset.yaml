@@ -1,0 +1,168 @@
+{{- $fullname := include "timestore.fullname" . }}
+{{- $publicUrl := include "timestore.publicUrl" . }}
+# One replica only: TimeStore is single node (SQLite metadata has one writer). A StatefulSet stops the old pod before
+# it starts the new one, so two pods never write the same volume.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $fullname }}
+  labels:
+    {{- include "timestore.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  serviceName: {{ $fullname }}-headless
+  podManagementPolicy: OrderedReady
+  updateStrategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      {{- include "timestore.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "timestore.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+        # Restart the pod when the chart's own root-key Secret changes.
+        checksum/root: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.priorityClassName }}
+      priorityClassName: {{ . }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      enableServiceLinks: false
+      containers:
+        - name: timestore
+          image: {{ include "timestore.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          ports:
+            - name: s3
+              containerPort: 9000
+            - name: admin
+              containerPort: 9001
+          env:
+            - name: TimeStore__DataPath
+              value: /data
+            - name: TimeStore__AdminAddress
+              value: 0.0.0.0
+            - name: TimeStore__S3__RootAccessKey
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "timestore.rootSecretName" . }}
+                  key: {{ .Values.rootCredentials.accessKeyKey }}
+            - name: TimeStore__S3__RootSecretKey
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "timestore.rootSecretName" . }}
+                  key: {{ .Values.rootCredentials.secretKeyKey }}
+            - name: TimeStore__S3__Region
+              value: {{ .Values.config.region | quote }}
+            {{- if $publicUrl }}
+            - name: TimeStore__S3__PublicUrl
+              value: {{ $publicUrl | quote }}
+            {{- end }}
+            {{- range $i, $domain := .Values.config.domains }}
+            - name: TimeStore__S3__Domains__{{ $i }}
+              value: {{ $domain | quote }}
+            {{- end }}
+            - name: TimeStore__Admin__SecureCookies
+              value: {{ include "timestore.secureCookies" . | quote }}
+            - name: TimeStore__Admin__SessionHours
+              value: {{ .Values.config.sessionHours | quote }}
+            {{- if .Values.masterKey.existingSecret }}
+            - name: TimeStore__MasterKeyFile
+              value: /secrets/master-key/{{ .Values.masterKey.key }}
+            {{- end }}
+            # No diagnostics IPC socket: the root file system is read-only.
+            - name: DOTNET_EnableDiagnostics
+              value: "0"
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.startupProbe }}
+          startupProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+            {{- if .Values.masterKey.existingSecret }}
+            - name: master-key
+              mountPath: /secrets/master-key
+              readOnly: true
+            {{- end }}
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        {{- if .Values.masterKey.existingSecret }}
+        - name: master-key
+          secret:
+            secretName: {{ .Values.masterKey.existingSecret }}
+            defaultMode: 0400
+        {{- end }}
+        {{- if not .Values.persistence.enabled }}
+        - name: data
+          emptyDir: {}
+        {{- else if .Values.persistence.existingClaim }}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ .Values.persistence.existingClaim }}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+  {{- if and .Values.persistence.enabled (not .Values.persistence.existingClaim) }}
+  # The claim outlives the release (helm uninstall keeps it): delete it yourself to drop the data.
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          {{- include "timestore.selectorLabels" . | nindent 10 }}
+        {{- with .Values.persistence.annotations }}
+        annotations:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+      spec:
+        accessModes:
+          {{- toYaml .Values.persistence.accessModes | nindent 10 }}
+        {{- with .Values.persistence.storageClass }}
+        storageClassName: {{ . | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.persistence.size }}
+  {{- end }}
