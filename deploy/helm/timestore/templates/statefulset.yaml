@@ -88,6 +88,16 @@ spec:
             - name: TimeStore__MasterKeyFile
               value: /secrets/master-key/{{ .Values.masterKey.key }}
             {{- end }}
+            - name: TimeStore__Backup__Compression
+              value: {{ .Values.backup.compression | quote }}
+            - name: TimeStore__Backup__CompressionLevel
+              value: {{ .Values.backup.compressionLevel | int | quote }}
+            - name: TimeStore__Backup__MinFreeBytes
+              value: {{ .Values.backup.minFreeBytes | int64 | quote }}
+            {{- if .Values.backup.existingClaim }}
+            - name: TimeStore__Backup__Path
+              value: /backups
+            {{- end }}
             # No diagnostics IPC socket: the root file system is read-only.
             - name: DOTNET_EnableDiagnostics
               value: "0"
@@ -118,6 +128,10 @@ spec:
               mountPath: /secrets/master-key
               readOnly: true
             {{- end }}
+            {{- if .Values.backup.existingClaim }}
+            - name: backups
+              mountPath: /backups
+            {{- end }}
       volumes:
         - name: tmp
           emptyDir: {}
@@ -126,6 +140,11 @@ spec:
           secret:
             secretName: {{ .Values.masterKey.existingSecret }}
             defaultMode: 0400
+        {{- end }}
+        {{- if .Values.backup.existingClaim }}
+        - name: backups
+          persistentVolumeClaim:
+            claimName: {{ .Values.backup.existingClaim }}
         {{- end }}
         {{- if not .Values.persistence.enabled }}
         - name: data

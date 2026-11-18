@@ -76,7 +76,7 @@ start when the data directory has less than `Backup:MinFreeBytes` free (1 GiB by
 
 ### Restore an archive
 
-Restore runs with the server stopped, into an **empty** data directory. It checks the manifest (it refuses an archive
+Restore runs with the server stopped, into an **empty** data directory (a `lost+found` left by ext4 is ignored). It checks the manifest (it refuses an archive
 from a newer TimeStore), the metadata checksum and every entry against `blobs.sha256`, and removes everything it
 wrote if any check fails:
 
@@ -96,8 +96,9 @@ server has no admin sessions and no backup history; sign in again.
 The archive also opens with ordinary tools: `tar --zstd -xf <archive>` gives a data directory, and
 `sha256sum -c blobs.sha256` inside it checks it.
 
-On Kubernetes, run the restore as a one-off pod with the TimeStore image and the (new, empty) data claim mounted at
-`/data`, the archive on a second volume, before you install or scale the StatefulSet back up.
+On Kubernetes, the Helm chart's README has the steps: streaming, a backups claim (`backup.existingClaim`), and a
+restore Job, in place or side by side with a second release
+([deploy/helm/timestore/README.md](../deploy/helm/timestore/README.md)).
 
 ## Copy the data directory yourself
 
@@ -180,8 +181,7 @@ Restoring into an older version is not supported.
 
 ## Kubernetes (Helm chart)
 
-The built-in backup works the same on Kubernetes (port-forward or expose the admin port, then stream or use a backup
-volume for `Backup:Path`). For file-level copies, volume snapshots (option 2) are the easiest way when your CSI driver
+The built-in backup works the same on Kubernetes (the chart README, "Back up" and "Restore a backup"). For file-level copies, volume snapshots (option 2) are the easiest way when your CSI driver
 supports them. Without snapshots, the stop, copy, start way works with plain `kubectl`; these steps were tested end to end on k3s (backup, `helm uninstall`, claim
 deleted, restore, data and access keys back). Replace `ts` with your release name and `storage` with the namespace.
 

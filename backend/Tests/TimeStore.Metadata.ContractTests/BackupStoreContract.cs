@@ -169,7 +169,8 @@ public abstract class BackupStoreContract : IAsyncLifetime
         var ids = new List<Guid>();
         for (var i = 0; i < 3; i++)
         {
-            var run = Queued();
+            // Ids are UUIDv7: one millisecond apart at least, or their order within the millisecond is random.
+            var run = Queued() with { Id = Guid.CreateVersion7(Now.AddSeconds(i)) };
             await Runs.TryCreateBackupRunAsync(run, Ct);
             await Runs.TryFinishBackupRunAsync(run.Id, Outcome(BackupStatus.Cancelled), Ct);
             ids.Add(run.Id);

@@ -27,10 +27,13 @@ public sealed class BackupRestorer(IBackupArchiveFormat format)
     private const string ChecksumListName = "restore-blobs.sha256.tmp";
     private const UnixFileMode PrivateFile = UnixFileMode.UserRead | UnixFileMode.UserWrite;
 
+    // ext4 creates it at the root of every file system (Longhorn, EBS, Ceph RBD volumes): an empty volume still has it.
+    private const string LostAndFound = "lost+found";
+
     public async ValueTask<Result<RestoreSummary>> RestoreAsync(RestoreRequest request, CancellationToken ct)
     {
         var data = new DirectoryInfo(Path.GetFullPath(request.DataPath));
-        if (data.Exists && data.EnumerateFileSystemInfos().Any())
+        if (data.Exists && data.EnumerateFileSystemInfos().Any(entry => entry.Name != LostAndFound))
             return BackupErrors.RestoreNotEmpty;
 
         var createdDirectory = !data.Exists;
@@ -207,7 +210,10 @@ public sealed class BackupRestorer(IBackupArchiveFormat format)
         }
 
         foreach (var directory in data.EnumerateDirectories())
-            directory.Delete(recursive: true);
+        {
+            if (directory.Name != LostAndFound)
+                directory.Delete(recursive: true);
+        }
         foreach (var file in data.EnumerateFiles())
             file.Delete();
     }

@@ -52,6 +52,20 @@ public sealed class BackupRestorerTests : IDisposable
     }
 
     [Fact]
+    public async Task Restore_IntoAVolumeWithOnlyLostAndFound_Works_AndAFailureKeepsIt()
+    {
+        var lostAndFound = Directory.CreateDirectory(Path.Combine(DataPath, "lost+found"));
+
+        Assert.True((await RestoreAsync(await ArchiveAsync())).IsSuccess);
+        Assert.True(lostAndFound.Exists);
+
+        Directory.Delete(DataPath, recursive: true);
+        lostAndFound.Create();
+        await AssertRefusedAsync(await ArchiveAsync(withChecksums: false), BackupErrors.Codes.RestoreInvalidArchive, keepsDirectory: true);
+        Assert.Equal(["lost+found"], Directory.GetFileSystemEntries(DataPath).Select(Path.GetFileName));
+    }
+
+    [Fact]
     public async Task Restore_IntoANonEmptyDirectory_IsRefused()
     {
         Directory.CreateDirectory(DataPath);

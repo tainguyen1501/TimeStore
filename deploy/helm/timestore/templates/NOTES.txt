@@ -23,6 +23,13 @@ Admin UI:
 
 WARNING: the admin UI is exposed without TLS: sign-in sends a secret key in clear text. Set ingress.admin.tlsSecret.
 {{- end }}
+
+Backups (the server keeps running; docs/backup.md):
+  sign in through the admin port, then  curl -fsS -b cookies -OJ http://127.0.0.1:9001/api/v1/backups/stream
+{{- if .Values.backup.existingClaim }}
+  or POST /api/v1/backups: archives are written to the claim {{ .Values.backup.existingClaim }} (/backups)
+{{- end }}
+  restore: see the chart README, "Restore a backup"
 {{- if not .Values.masterKey.existingSecret }}
 
 The master key is kept inside the data volume. For production, create it as a Secret and keep a copy apart from the

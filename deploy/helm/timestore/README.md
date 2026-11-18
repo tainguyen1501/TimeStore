@@ -67,6 +67,8 @@ work from outside. With TLS on the admin ingress, the session cookie is marked `
 | `config.domains` | `[]` | `S3:Domains`, for virtual-host addressing |
 | `config.secureCookies` | `null` | `Admin:SecureCookies`; null: true when `ingress.admin` has TLS |
 | `config.sessionHours` | `24` | `Admin:SessionHours` |
+| `backup.existingClaim` | `""` | A claim you create for backups started from the admin API (mounted at `/backups`, `Backup:Path`); empty: streamed backups only |
+| `backup.compression` / `compressionLevel` / `minFreeBytes` | `zstd` / `3` / `1073741824` | `Backup:Compression`, `Backup:CompressionLevel` (1–19), `Backup:MinFreeBytes` |
 | `extraEnv` | `[]` | More settings as `TimeStore__Section__Key` variables ([all settings](../../../docs/configuration.md)) |
 | `persistence.enabled` | `true` | Off: an `emptyDir`, data lost on every restart |
 | `persistence.storageClass` / `size` / `accessModes` | `""` / `20Gi` / `[ReadWriteOnce]` | The data volume (empty class: the cluster default) |
@@ -89,9 +91,158 @@ work from outside. With TLS on the admin ingress, the session cookie is marked `
   are never deleted by Helm), so a reinstall with the same release name finds the same buckets, objects and access
   keys. A generated root secret is replaced on reinstall; use `rootCredentials.existingSecret` to keep one root key
   pair for good. Delete the claim yourself to drop the data.
-- **Backups:** take a `VolumeSnapshot` of the claim (with a CSI driver that supports snapshots) or follow
-  [docs/backup.md](../../../docs/backup.md).
+- **Backups:** see below; a `VolumeSnapshot` of the data claim (with a CSI driver that supports snapshots) works too.
 - **Upgrades** replace the pod (stop, then start): S3 requests fail for the few seconds in between. Take a backup
   before you upgrade TimeStore itself.
 - **Expected warning:** without TLS on the admin ingress, the server logs that the admin API listens on plain HTTP.
   It is reachable only inside the cluster (`ClusterIP`) unless you expose it.
+
+## Back up
+
+TimeStore backs itself up while it runs: one archive of the server at an instant, every blob checked
+([docs/backup.md](../../../docs/backup.md)). Only admin keys may back up. Replace `ts` with your release and `storage`
+with the namespace.
+
+**Stream** an archive to your machine (nothing is kept in the cluster):
+
+```bash
+kubectl -n storage port-forward svc/ts-timestore-admin 9001:9001 &
+ADMIN=http://127.0.0.1:9001
+curl -s -c cookies -H "Origin: $ADMIN" -H 'Content-Type: application/json' \
+  -d '{"accessKeyId":"admin","secretKey":"<root secret>"}' "$ADMIN/api/v1/auth/login"
+curl -fsS -b cookies -OJ "$ADMIN/api/v1/backups/stream"      # timestore-node-1-<time>.tar.zst
+```
+
+**Keep archives in the cluster:** create a claim for them yourself (it then outlives the release and the data
+volume; any storage class works, archives are plain files) and point `backup.existingClaim` at it:
+
+```bash
+kubectl -n storage apply -f - <<EOF
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: { name: timestore-backups }
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: { requests: { storage: 50Gi } }
+EOF
+helm upgrade ts oci://ghcr.io/tainguyen1501/charts/timestore -n storage --reuse-values \
+  --set backup.existingClaim=timestore-backups
+curl -s -b cookies -H "Origin: $ADMIN" -H 'Content-Type: application/json' -d '{}' "$ADMIN/api/v1/backups"
+curl -s -b cookies "$ADMIN/api/v1/backups"                      # status, archiveName
+```
+
+With `ReadWriteOnce` claims on node-local storage (k3s `local-path`), both claims bind to the pod's node.
+
+## Restore a backup
+
+A restore replaces the whole data directory with the archive's instant. It runs while no TimeStore pod uses the data
+claim, into an **empty** claim (an ext4 `lost+found` is fine), checks every entry, and removes what it wrote if a
+check fails. Objects written after the backup's instant are not in the restored server. Pick one of two ways.
+
+**A. In place** (the S3 API is down until the pod is back):
+
+```bash
+kubectl -n storage scale statefulset ts-timestore --replicas=0
+kubectl -n storage wait --for=delete pod/ts-timestore-0 --timeout=120s
+kubectl -n storage delete pvc data-ts-timestore-0              # the data you replace: check the archive first
+kubectl -n storage apply -f - <<EOF
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: { name: data-ts-timestore-0 }
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: { requests: { storage: 20Gi } }                 # as persistence.size
+EOF
+kubectl -n storage apply -f restore-job.yaml                   # below, data claim data-ts-timestore-0
+kubectl -n storage wait --for=condition=complete job/timestore-restore --timeout=30m
+kubectl -n storage logs job/timestore-restore                  # "all checksums verified"
+kubectl -n storage delete job timestore-restore
+kubectl -n storage scale statefulset ts-timestore --replicas=1
+```
+
+After a lost cluster or a `helm uninstall` with its claim deleted: create the claim, run the Job, then `helm install`
+with the same release name.
+
+**B. Side by side** (the old server keeps serving until you switch): restore into the claim of a second release,
+install it, check it, then move the ingress or DNS to it and uninstall the old release.
+
+```bash
+kubectl -n storage apply -f - <<EOF
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: { name: data-ts2-timestore-0 }
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: { requests: { storage: 20Gi } }
+EOF
+kubectl -n storage apply -f restore-job.yaml                   # data claim data-ts2-timestore-0
+kubectl -n storage wait --for=condition=complete job/timestore-restore --timeout=30m
+helm install ts2 oci://ghcr.io/tainguyen1501/charts/timestore -n storage -f values.yaml
+```
+
+**The restore Job** runs the image's `restore` command with the same user and security settings as the pod, reading
+the archive from the backups claim:
+
+```yaml
+# restore-job.yaml
+apiVersion: batch/v1
+kind: Job
+metadata: { name: timestore-restore }
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1654
+        runAsGroup: 1654
+        fsGroup: 1654
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: restore
+          image: ghcr.io/tainguyen1501/timestore:0.1.0            # the release's version, or newer
+          args: [restore, --archive, /backups/timestore-node-1-20261118T020000Z.tar.zst, --data-path, /data]
+          env: [{ name: DOTNET_EnableDiagnostics, value: "0" }]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: data, mountPath: /data }
+            - { name: backups, mountPath: /backups, readOnly: true }
+      volumes:
+        - { name: data, persistentVolumeClaim: { claimName: data-ts-timestore-0 } }
+        - { name: backups, persistentVolumeClaim: { claimName: timestore-backups } }
+```
+
+**An archive on your machine** (a streamed backup): start a pod with the image and the data claim, copy the archive
+in, restore, remove the pod.
+
+```bash
+kubectl -n storage apply -f - <<EOF
+apiVersion: v1
+kind: Pod
+metadata: { name: timestore-restore }
+spec:
+  restartPolicy: Never
+  securityContext: { runAsNonRoot: true, runAsUser: 1654, runAsGroup: 1654, fsGroup: 1654 }
+  containers:
+    - name: restore
+      image: ghcr.io/tainguyen1501/timestore:0.1.0
+      command: [sleep, "3600"]
+      env: [{ name: DOTNET_EnableDiagnostics, value: "0" }]
+      volumeMounts: [{ name: data, mountPath: /data }, { name: in, mountPath: /in }]
+  volumes:
+    - { name: data, persistentVolumeClaim: { claimName: data-ts-timestore-0 } }
+    - { name: in, emptyDir: {} }
+EOF
+kubectl -n storage wait --for=condition=Ready pod/timestore-restore --timeout=120s
+kubectl -n storage cp timestore-node-1-20261118T020000Z.tar.zst timestore-restore:/in/archive.tar.zst
+kubectl -n storage exec timestore-restore -- /app/TimeStore.Server restore --archive /in/archive.tar.zst --data-path /data
+kubectl -n storage delete pod timestore-restore
+```
+
+**Master key:** an archive holds it only when the backup asked for it (`includeMasterKey=true`). With
+`masterKey.existingSecret`, keep that Secret and restore an archive without the key. With neither, the server creates
+a new key and the access keys stored before stop working (the root key pair still works).
