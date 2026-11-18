@@ -19,8 +19,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: CLA Assistant
+        # Bot pull requests (Dependabot) are skipped: bots cannot sign, and GitHub gives their runs a read-only token.
         if: >-
-          github.event_name == 'pull_request_target' ||
+          (github.event_name == 'pull_request_target' && github.event.pull_request.user.type != 'Bot') ||
           (github.event.issue.pull_request &&
            (github.event.comment.body == 'recheck' ||
             github.event.comment.body == 'I have read the CLA Document and I hereby sign the CLA'))
