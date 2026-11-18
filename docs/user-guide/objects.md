@@ -43,6 +43,9 @@ The preview window shows how the object is reached outside this UI:
 
 - **Upload** picks files, **⋯ → Upload folder** picks a folder and keeps its structure; you can also drop files
   anywhere on the page, or use **Upload Files** in the sidebar. Uploads go into the folder you are in.
+- Files over 16 MB go up in parts (8 MB or more each, three at a time). A part that fails on a dropped connection or a
+  timeout is sent again up to three times (after 1, 2 and 4 seconds), so a short network problem does not restart a
+  large upload. If it still fails, the upload is cancelled on the server and nothing is left behind.
 - Files over 64 MiB are sent in parts (three at a time); the panel at the bottom right shows progress on every page.
   **×** cancels a file; nothing of a cancelled file stays on the server.
 - An object with the same key is replaced.
