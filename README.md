@@ -104,6 +104,24 @@ Before you store anything that matters: keep the admin port on loopback or behin
 `master.key` from the data directory separately from the data, because stored access keys cannot be decrypted
 without it. All settings: [docs/configuration.md](docs/configuration.md).
 
+### Ports
+
+TimeStore listens on two ports, so admin traffic never shares the S3 path:
+
+| Port | Serves | Who uses it | Default address |
+|---|---|---|---|
+| `9000` (`S3Port`) | The S3 API | Applications, SDKs, the AWS CLI, rclone, share links, public objects | All interfaces |
+| `9001` (`AdminPort`) | The admin UI and its API (`/api/v1`) | People signing in with an access key | `127.0.0.1` (`AdminAddress`) |
+
+- The admin port answers only on the machine itself by default. To reach it from elsewhere, put a TLS reverse proxy
+  in front of it, set `AdminAddress=0.0.0.0` and `Admin:SecureCookies=true`; sign-in sends a secret key, so never
+  expose it over plain HTTP. In the container image the admin port listens inside the container, so the Docker
+  command above publishes it on `127.0.0.1` only.
+- Behind a proxy or another host name, set `S3:PublicUrl` so the admin UI shows S3 URLs and share links that work
+  from outside.
+- The request charts in the admin UI count S3 API traffic (port 9000); actions in the admin UI itself are not
+  counted.
+
 ## What works
 
 | Area | Supported |
