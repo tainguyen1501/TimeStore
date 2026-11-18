@@ -63,6 +63,9 @@ public sealed class ServerOptions
     /// <summary>Blob lifecycle (section <c>TimeStore:Blobs</c>).</summary>
     public BlobSettings Blobs { get; set; } = new();
 
+    /// <summary>Backups (section <c>TimeStore:Backup</c>).</summary>
+    public BackupSettings Backup { get; set; } = new();
+
     /// <summary>The first problem found, or null. Bad configuration must stop startup.</summary>
     public string? Validate()
     {
@@ -78,6 +81,8 @@ public sealed class ServerOptions
             return blobProblem;
         if (Lifecycle.Validate() is { } lifecycleProblem)
             return lifecycleProblem;
+        if (Backup.Validate(DataPath) is { } backupProblem)
+            return backupProblem;
         if (!IsValidNodeId(NodeId))
             return $"{Section}:{nameof(NodeId)} must be 1-{BlobLocator.NodeIdMaxLength} lowercase letters, digits or hyphens.";
         if (string.IsNullOrWhiteSpace(DataPath))

@@ -18,10 +18,16 @@ using TimeStore.Application.Features.Uploads;
 using TimeStore.Application.Features.Auth;
 using TimeStore.Application.Features.Metrics;
 using TimeStore.Server.Metrics;
+using TimeStore.Application.Features.Backups;
+using TimeStore.Infra.Backups;
 
 var builder = WebApplication.CreateSlimBuilder(args);
 
 var options = builder.Configuration.GetSection(ServerOptions.Section).Get<ServerOptions>() ?? new ServerOptions();
+// Offline restore: needs only the data path and master key settings, not a complete server configuration.
+if (RestoreCommand.Matches(args))
+    return await RestoreCommand.RunAsync(args, options);
+
 if (options.Validate() is { } problem)
     throw new InvalidOperationException(problem);
 
@@ -70,6 +76,12 @@ builder.Services.AddSingleton(options.Admin);
 builder.Services.AddSingleton(new AdminSessionOptions(options.Admin.SessionLifetime));
 builder.Services.AddSingleton(new BlobDeletionOptions(options.Blobs.DeleteDelay));
 builder.Services.AddSingleton(new StorageMetricsOptions(options.DataPath));
+builder.Services.AddSingleton(new BackupOptions(
+    options.NodeId, options.DataPath, Path.Combine(options.DataPath, FileSystemBlobStore.TempDirectory), options.MasterKeyPath,
+    options.Backup.Compression, options.Backup.CompressionLevel, options.Backup.MinFreeBytes));
+if (options.Backup.HasDirectory)
+    builder.Services.AddDirectoryBackupTarget(new DirectoryBackupOptions(options.Backup.Path!));
+builder.Services.AddHostedService<BackupWorker>();
 builder.Services.AddSingleton<S3RequestMetrics>();
 builder.Services.AddSingleton<MetricsSampler>();
 builder.Services.AddHostedService(provider => provider.GetRequiredService<MetricsSampler>());
@@ -101,11 +113,13 @@ app.MapHealthEndpoints();
 app.MapAdminApi();
 app.MapAdminObjectApi();
 app.MapAdminMetricsApi();
+app.MapAdminBackupApi();
 if (options.Admin.OpenApi)
     app.MapOpenApi(); // /openapi/v1.json, Development only by default (AdminSettings.OpenApi)
 app.UseAdminUi(options.Admin); // everything else on the admin port: the React UI
 
 await app.RunAsync();
+return 0;
 
 internal static class MasterKey
 {

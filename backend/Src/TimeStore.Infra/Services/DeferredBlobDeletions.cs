@@ -10,7 +10,12 @@ namespace TimeStore.Infra.Services;
 /// due order) drained once a second. On shutdown the remaining ones are deleted at once (no request reads anymore);
 /// after a crash the orphan sweep finds them (no row references them).
 /// </summary>
-public sealed class DeferredBlobDeletions : IBlobDeletions, IAsyncDisposable
+/// <remarks>
+/// Also the <see cref="IBlobHold"/>: while a backup holds blobs nothing is deleted (blobs released with no delay are
+/// queued instead), and the queue drains when the last hold ends. Every committed blob is deleted here, and the orphan
+/// sweep skips queued blobs, so this is the one place a hold has to stop.
+/// </remarks>
+public sealed class DeferredBlobDeletions : IBlobDeletions, IBlobHold, IAsyncDisposable
 {
     private static readonly TimeSpan Tick = TimeSpan.FromSeconds(1);
 
@@ -21,6 +26,7 @@ public sealed class DeferredBlobDeletions : IBlobDeletions, IAsyncDisposable
     private readonly ConcurrentDictionary<Guid, byte> _pending = new();
     private readonly CancellationTokenSource _stopping = new();
     private readonly Task _loop;
+    private int _holds;
 
     public DeferredBlobDeletions(IBlobStore blobs, BlobDeletionOptions options, TimeProvider clock)
     {
@@ -32,12 +38,14 @@ public sealed class DeferredBlobDeletions : IBlobDeletions, IAsyncDisposable
 
     public async ValueTask DeferAsync(IEnumerable<BlobLocator> blobs)
     {
-        if (_delay <= TimeSpan.Zero)
+        if (_delay <= TimeSpan.Zero && Volatile.Read(ref _holds) == 0)
         {
             await _blobs.DeleteQuietlyAsync(blobs);
             return;
         }
 
+        // Held with no delay: due now, deleted when the last hold ends. A drain that started before the hold took its
+        // "now" earlier, so it never reaches these; one that starts later stops at the hold check.
         var due = _clock.GetUtcNow() + _delay;
         foreach (var blob in blobs)
         {
@@ -53,7 +61,8 @@ public sealed class DeferredBlobDeletions : IBlobDeletions, IAsyncDisposable
     {
         var now = _clock.GetUtcNow();
         var deleted = 0;
-        while (_queue.TryPeek(out var next) && next.Due <= now && _queue.TryDequeue(out var item))
+        while (Volatile.Read(ref _holds) == 0 && _queue.TryPeek(out var next) && next.Due <= now
+               && _queue.TryDequeue(out var item))
         {
             await _blobs.DeleteQuietlyAsync(item.Blob);
             _pending.TryRemove(item.BlobId, out _);
@@ -65,6 +74,29 @@ public sealed class DeferredBlobDeletions : IBlobDeletions, IAsyncDisposable
 
     /// <summary>Waiting blobs (diagnostics, tests).</summary>
     public int PendingCount => _pending.Count;
+
+    /// <summary>Whether a backup holds blobs now (diagnostics, tests).</summary>
+    public bool IsHeld => Volatile.Read(ref _holds) > 0;
+
+    public IAsyncDisposable Hold()
+    {
+        Interlocked.Increment(ref _holds);
+        return new BlobHoldLease(this);
+    }
+
+    private async ValueTask ReleaseAsync()
+    {
+        if (Interlocked.Decrement(ref _holds) == 0)
+            await DeleteDueAsync(); // what waited (and, with no delay, everything queued meanwhile) goes now
+    }
+
+    private sealed class BlobHoldLease(DeferredBlobDeletions owner) : IAsyncDisposable
+    {
+        private int _released;
+
+        public ValueTask DisposeAsync() =>
+            Interlocked.Exchange(ref _released, 1) == 0 ? owner.ReleaseAsync() : ValueTask.CompletedTask;
+    }
 
     private async Task RunAsync()
     {

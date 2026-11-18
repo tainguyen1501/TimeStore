@@ -1,8 +1,9 @@
 # Backup and restore
 
-Everything TimeStore stores lives in one data directory, plus a master key and the configuration. Back these up
-together, and take the copy in a way that sees the directory at one instant: copying it file by file while the server
-is writing can produce a backup that does not restore.
+Everything TimeStore stores lives in one data directory, plus a master key and the configuration. The
+[built-in backup](#built-in-backup-the-server-keeps-running) archives a running server consistently; a file-level copy
+must see the directory at one instant: copying it file by file while the server is writing can produce a backup that
+does not restore.
 
 ## What to back up
 
@@ -20,11 +21,94 @@ holds writes in flight and is emptied at startup: it does not need a backup.
 warning, and every access key created before can no longer be used (the root key pair still works, since it comes from
 the configuration). Keep a copy of the key you can find again.
 
-## Take a consistent backup
+## Built-in backup (the server keeps running)
+
+TimeStore can back itself up while it serves requests. A backup is one archive that holds the server exactly as it was
+at one instant T: the metadata, every blob it references (current and older versions, parts of open multipart
+uploads), a manifest and a checksum list. Every blob is checked against its stored MD5 while it is copied, so an
+archive is never silently broken. Writes go on during the backup; objects written after T are simply not in it.
+
+The archive is a tar file, compressed with Zstandard by default (`.tar.zst`; `none` gives a plain `.tar`):
+
+```
+manifest.json                 what the archive holds (instant T, counts, versions, metadata checksum)
+metadata.db                   the metadata snapshot at T
+blobs/<xy>/<id>               the object data, same layout as the data directory
+master.key                    only when asked for (off by default)
+blobs.sha256                  checksum of every entry above (sha256sum format), last
+```
+
+Only admins can start, list, download or stream backups. The master key is **not** in the archive unless you ask for
+it (`includeMasterKey=true`): keep the key apart (see below) and an archive alone cannot decrypt the access-key secrets.
+
+### Download a backup as a stream
+
+Nothing is kept on the server: the archive is written straight into the response.
+
+```bash
+ADMIN=http://127.0.0.1:9001
+curl -s -c cookies -H "Origin: $ADMIN" -H 'Content-Type: application/json' \
+  -d '{"accessKeyId":"<admin key>","secretKey":"<secret>"}' "$ADMIN/api/v1/auth/login"
+curl -fsS -b cookies -OJ "$ADMIN/api/v1/backups/stream"          # timestore-node-1-20261118T020000Z.tar.zst
+curl -fsS -b cookies -OJ "$ADMIN/api/v1/backups/stream?compression=none&includeMasterKey=true"
+```
+
+If the backup fails after it started, the connection is cut (`curl -f` exits non-zero): a partial download never
+looks complete, and a restore refuses it.
+
+### Back up to a directory
+
+Set `TimeStore:Backup:Path` to a directory **outside** the data directory: a second disk, a mounted share or a backup
+volume (a copy on the same disk does not survive the disk). Then start a backup from the admin API; the server's
+backup worker writes `<name>.partial` and renames it when the archive is complete.
+
+```bash
+curl -s -b cookies -H "Origin: $ADMIN" -H 'Content-Type: application/json' -d '{}' "$ADMIN/api/v1/backups"
+curl -s -b cookies "$ADMIN/api/v1/backups"                           # status, progress, archiveName, archiveSha256
+curl -fsS -b cookies -OJ "$ADMIN/api/v1/backups/<id>/archive"         # download it later
+```
+
+One backup runs at a time. A backup that is running when the server stops (or crashes) is marked `interrupted` and is
+not started again: start a new one. What it left (the `.partial` file, its snapshot in `<DataPath>/tmp/`) is removed at
+the next start, and the blobs it kept from deletion are reclaimed by the orphan sweep. Blobs that writes release during a backup stay on disk until it ends, so a backup refuses to
+start when the data directory has less than `Backup:MinFreeBytes` free (1 GiB by default). Settings:
+[configuration](configuration.md).
+
+### Restore an archive
+
+Restore runs with the server stopped, into an **empty** data directory. It checks the manifest (it refuses an archive
+from a newer TimeStore), the metadata checksum and every entry against `blobs.sha256`, and removes everything it
+wrote if any check fails:
+
+```bash
+TimeStore.Server restore --archive timestore-node-1-20261118T020000Z.tar.zst --data-path /srv/timestore/data
+# Container: same image, the new volume at /data, the archive mounted read-only
+docker run --rm -v timestore-data:/data -v "$PWD":/backup:ro ghcr.io/tainguyen1501/timestore:<version> \
+  restore --archive /backup/timestore-node-1-20261118T020000Z.tar.zst
+```
+
+`--data-path` defaults to `TimeStore:DataPath` (`/data` in the image) and the key goes to `--master-key`, else
+`TimeStore:MasterKeyFile`, else `<data>/master.key`. When the archive holds no master key, put the original key there
+before the first start; otherwise the server creates a new one and the access keys stored before cannot be used (the
+root key pair still works). Then start the server with the same configuration (root key pair, `NodeId`). The restored
+server has no admin sessions and no backup history; sign in again.
+
+The archive also opens with ordinary tools: `tar --zstd -xf <archive>` gives a data directory, and
+`sha256sum -c blobs.sha256` inside it checks it.
+
+On Kubernetes, run the restore as a one-off pod with the TimeStore image and the (new, empty) data claim mounted at
+`/data`, the archive on a second volume, before you install or scale the StatefulSet back up.
+
+## Copy the data directory yourself
+
+The built-in backup is the simplest way. File-level copies also work, as long as they see the data directory at one
+instant.
+
+### Take a consistent copy
 
 Pick one of these. All three give a copy that restores; the difference is how long the server stops.
 
-### 1. Stop, copy, start
+#### 1. Stop, copy, start
 
 The simplest way, with a short stop.
 
@@ -41,7 +125,7 @@ docker start timestore
 tar -czf timestore-$(date +%Y%m%d-%H%M).tar.gz -C /srv/timestore/data .
 ```
 
-### 2. Snapshot the volume (recommended for production)
+#### 2. Snapshot the volume
 
 Take an atomic snapshot of the file system or disk that holds the data directory, with the server running: ZFS
 (`zfs snapshot`), btrfs (`btrfs subvolume snapshot`), LVM (`lvcreate --snapshot`), a cloud disk snapshot, or a
@@ -54,7 +138,7 @@ committed yet are removed by the orphan sweep after the restore (`BlobSweep` set
 
 The data directory and the master key must be in the same snapshot, or the key must not have changed since.
 
-### 3. Back up from a snapshot with a backup tool
+#### 3. Back up from a snapshot with a backup tool
 
 To keep backups off the machine, deduplicated or encrypted (restic, borg, Kopia, Velero on Kubernetes), point the tool
 at a mounted snapshot from option 2, never at the live data directory.
@@ -66,7 +150,7 @@ restic backup /tank/timestore/.zfs/snapshot/nightly
 zfs destroy tank/timestore@nightly
 ```
 
-## What not to do
+### What not to do
 
 - **Do not `cp` or `rsync` the live data directory.** The files are copied at different moments: `metadata.db` and
   its `-wal` file may not match, and objects written during the copy may have metadata without data or the reverse.
@@ -75,7 +159,7 @@ zfs destroy tank/timestore@nightly
 - **Do not rely on object versioning as a backup.** Versions protect against overwrites and deletes inside TimeStore,
   not against losing the disk.
 
-## Restore
+### Restore a copy
 
 1. Stop the server if it runs.
 2. Put the backup in place as the data directory (an empty `DataPath`, or a new volume):
@@ -96,8 +180,9 @@ Restoring into an older version is not supported.
 
 ## Kubernetes (Helm chart)
 
-Volume snapshots (option 2) are the easiest way when your CSI driver supports them. Without snapshots, the stop, copy,
-start way works with plain `kubectl`; these steps were tested end to end on k3s (backup, `helm uninstall`, claim
+The built-in backup works the same on Kubernetes (port-forward or expose the admin port, then stream or use a backup
+volume for `Backup:Path`). For file-level copies, volume snapshots (option 2) are the easiest way when your CSI driver
+supports them. Without snapshots, the stop, copy, start way works with plain `kubectl`; these steps were tested end to end on k3s (backup, `helm uninstall`, claim
 deleted, restore, data and access keys back). Replace `ts` with your release name and `storage` with the namespace.
 
 **Back up** (the S3 API is down for the copy):

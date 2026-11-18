@@ -13,7 +13,10 @@ public static class SqliteServiceCollectionExtensions
         services.TryAddSingleton(TimeProvider.System);
         services.AddSingleton(options);
         services.AddSingleton<SqliteConnectionFactory>();
-        services.AddSingleton<IMetadataStore, SqliteMetadataStore>();
+        services.AddSingleton<SqliteMetadataStore>();
+        services.AddSingleton<IMetadataStore>(provider => provider.GetRequiredService<SqliteMetadataStore>());
+        services.AddSingleton<IBackupRunStore>(provider => provider.GetRequiredService<SqliteMetadataStore>());
+        services.AddSingleton<IMetadataSnapshots, SqliteMetadataSnapshots>();
         services.AddSingleton<IStorageInitializer, SqliteMetadataInitializer>();
         return services;
     }

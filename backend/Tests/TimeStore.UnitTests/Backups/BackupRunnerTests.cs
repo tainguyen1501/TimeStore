@@ -1,0 +1,245 @@
+using TimeStore.Application.Abstractions;
+using TimeStore.Application.Features.Backups;
+using TimeStore.Blob.FileSystem;
+using TimeStore.Domain.Backups;
+using TimeStore.Domain.Blobs;
+using TimeStore.Infra.Backups;
+using TimeStore.Infra.Services;
+using TimeStore.Infra.Services.Backups;
+using TimeStore.UnitTests.Fakes;
+
+namespace TimeStore.UnitTests.Backups;
+
+/// <summary>The backup engine over real blob files, fake runs and snapshots, and an in-memory target.</summary>
+public sealed class BackupRunnerTests : IAsyncLifetime
+{
+    private readonly string _root = Path.Combine(Path.GetTempPath(), "timestore-backup-runner", Guid.NewGuid().ToString("N"));
+    private readonly CancellationToken _ct = TestContext.Current.CancellationToken;
+    private readonly InMemoryBackupRunStore _runs = new();
+    private readonly MemoryBackupTarget _target = new();
+    private readonly TarBackupArchiveFormat _format = new();
+    private FileSystemBlobStore _blobs = null!;
+    private DeferredBlobDeletions _deletions = null!;
+
+    private string DataPath => Path.Combine(_root, "data");
+
+    public async ValueTask InitializeAsync()
+    {
+        _blobs = new FileSystemBlobStore(new FileSystemBlobOptions(DataPath, "node-1"));
+        await _blobs.InitializeAsync(_ct);
+        _deletions = new DeferredBlobDeletions(_blobs, new BlobDeletionOptions(TimeSpan.FromMinutes(1)), TimeProvider.System);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await _deletions.DisposeAsync();
+        if (Directory.Exists(_root))
+            Directory.Delete(_root, recursive: true);
+    }
+
+    [Fact]
+    public async Task Run_ArchivesEveryBlob_UnderAHold_AndTheArchiveRestores()
+    {
+        var blobs = new[] { await BlobAsync("one"), await BlobAsync("two two") };
+        var snapshots = new FakeMetadataSnapshots(blobs) { OnCreate = () => Assert.True(_deletions.IsHeld) };
+        var runner = Runner(snapshots);
+        var run = await QueueAsync();
+
+        var execution = await runner.RunAsync(run.Id, _target, _ct);
+
+        Assert.Null(execution!.Error);
+        var done = execution.Run;
+        Assert.Equal(BackupStatus.Succeeded, done.Status);
+        Assert.Equal(new BackupProgress(2, 2, 10, 10), done.Progress);
+        Assert.NotNull(done.SnapshotAt);
+        Assert.StartsWith("timestore-node-1-", done.ArchiveName);
+        Assert.EndsWith(".tar.zst", done.ArchiveName);
+        var archive = _target.Archives[done.ArchiveName!];
+        Assert.Equal(archive.LongLength, done.ArchiveSize);
+        Assert.Equal(Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(archive)), done.ArchiveSha256);
+        Assert.False(_deletions.IsHeld);
+        Assert.Equal(0, snapshots.Open);
+
+        var restored = Path.Combine(_root, "restored");
+        var result = await Restore(archive, restored);
+        Assert.True(result.IsSuccess, result.IsFailure ? result.Error.Message : null);
+        Assert.Equal(2, result.Value.Manifest.Blobs);
+        Assert.False(result.Value.MasterKeyRestored);
+        Assert.Equal(FakeMetadataSnapshots.Database, await File.ReadAllBytesAsync(Path.Combine(restored, "metadata.db"), _ct));
+        foreach (var blob in blobs)
+            Assert.Equal(await ReadAsync(blob), await File.ReadAllBytesAsync(Path.Combine(restored, BackupLayout.BlobEntry(blob.BlobId)), _ct));
+    }
+
+    [Fact]
+    public async Task Run_WithTheMasterKey_ArchivesIt_AndRestoreWritesItPrivately()
+    {
+        var keyPath = Path.Combine(_root, "master.key");
+        await File.WriteAllBytesAsync(keyPath, [1, 2, 3, 4], _ct);
+        var runner = Runner(new FakeMetadataSnapshots([await BlobAsync("x")]), masterKeyPath: keyPath);
+        var run = await QueueAsync(includeMasterKey: true);
+
+        var execution = await runner.RunAsync(run.Id, _target, _ct);
+
+        var restoredKey = Path.Combine(_root, "keys", "restored.key");
+        var result = await Restore(_target.Archives[execution!.Run.ArchiveName!], Path.Combine(_root, "restored"), restoredKey);
+        Assert.True(result.Value.MasterKeyRestored);
+        Assert.Equal([1, 2, 3, 4], await File.ReadAllBytesAsync(restoredKey, _ct));
+        if (!OperatingSystem.IsWindows())
+            Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, File.GetUnixFileMode(restoredKey));
+    }
+
+    [Fact]
+    public async Task Run_WithAMissingBlob_Fails_AndCommitsNothing()
+    {
+        var gone = await BlobAsync("gone");
+        await _blobs.DeleteAsync(gone.BlobId, _ct);
+        var runner = Runner(new FakeMetadataSnapshots([await BlobAsync("ok"), gone]));
+        var run = await QueueAsync();
+
+        var execution = await runner.RunAsync(run.Id, _target, _ct);
+
+        Assert.Equal((BackupStatus.Failed, BackupErrors.Codes.BlobMissing), (execution!.Run.Status, execution.Run.ErrorCode));
+        Assert.Equal(new BackupProgress(2, 1, 6, 2), execution.Run.Progress);
+        Assert.Empty(_target.Archives);
+        Assert.Equal(1, _target.Abandoned);
+        Assert.False(_deletions.IsHeld);
+    }
+
+    [Theory]
+    [InlineData("other bytes, same length")]
+    [InlineData("short")]
+    public async Task Run_WithADamagedBlob_FailsAsCorrupt(string damage)
+    {
+        var blob = await BlobAsync("other bytes, same lengtX");
+        var damaged = Path.Combine(DataPath, BackupLayout.BlobEntry(blob.BlobId));
+        await File.WriteAllTextAsync(damaged, damage, _ct);
+        var runner = Runner(new FakeMetadataSnapshots([blob]));
+        var run = await QueueAsync();
+
+        var execution = await runner.RunAsync(run.Id, _target, _ct);
+
+        Assert.Equal((BackupStatus.Failed, BackupErrors.Codes.BlobCorrupt), (execution!.Run.Status, execution.Run.ErrorCode));
+        Assert.Contains(blob.BlobId.ToString("N"), execution.Run.ErrorMessage);
+        Assert.Empty(_target.Archives);
+    }
+
+    [Fact]
+    public async Task Cancel_StopsARunningRun_AsCancelled()
+    {
+        var blobs = new[] { await BlobAsync("a"), await BlobAsync("b"), await BlobAsync("c") };
+        var run = await QueueAsync();
+        BackupRunner runner = null!;
+        runner = Runner(new FakeMetadataSnapshots(blobs) { OnBlob = i => { if (i == 1) Assert.True(runner.Cancel(run.Id)); } });
+
+        var execution = await runner.RunAsync(run.Id, _target, _ct);
+
+        Assert.Equal((BackupStatus.Cancelled, BackupErrors.Codes.Cancelled), (execution!.Run.Status, execution.Run.ErrorCode));
+        Assert.Empty(_target.Archives);
+        Assert.False(runner.Cancel(run.Id)); // no longer running here
+        Assert.False(_deletions.IsHeld);
+    }
+
+    [Fact]
+    public async Task CallerGone_StopsTheRun_AsInterrupted()
+    {
+        using var caller = CancellationTokenSource.CreateLinkedTokenSource(_ct);
+        var runner = Runner(new FakeMetadataSnapshots([await BlobAsync("a"), await BlobAsync("b")]) { OnBlob = i => { if (i == 1) caller.Cancel(); } });
+        var run = await QueueAsync();
+
+        var execution = await runner.RunAsync(run.Id, _target, caller.Token);
+
+        Assert.Equal((BackupStatus.Interrupted, BackupErrors.Codes.Interrupted), (execution!.Run.Status, execution.Run.ErrorCode));
+        Assert.NotNull(execution.Run.FinishedAt);
+    }
+
+    [Fact]
+    public async Task Run_WithLittleFreeSpace_FailsBeforeTheSnapshot()
+    {
+        var snapshots = new FakeMetadataSnapshots([]);
+        var runner = Runner(snapshots, minFreeBytes: long.MaxValue);
+        var run = await QueueAsync();
+
+        var execution = await runner.RunAsync(run.Id, _target, _ct);
+
+        Assert.Equal((BackupStatus.Failed, BackupErrors.Codes.LowDiskSpace), (execution!.Run.Status, execution.Run.ErrorCode));
+        Assert.Equal(0, snapshots.Created);
+    }
+
+    [Fact]
+    public async Task Run_OfARunThatIsNoLongerQueued_DoesNothing()
+    {
+        var runner = Runner(new FakeMetadataSnapshots([]));
+        var run = await QueueAsync();
+        await _runs.TryFinishBackupRunAsync(run.Id, new BackupOutcome(BackupStatus.Cancelled, DateTime.UtcNow, BackupProgress.None, null, null, null, null), _ct);
+
+        Assert.Null(await runner.RunAsync(run.Id, _target, _ct));
+        Assert.Null(await runner.RunAsync(Guid.CreateVersion7(), _target, _ct));
+        Assert.Empty(_target.Archives);
+    }
+
+    [Fact]
+    public async Task RunQueued_WithoutItsTarget_FailsAsNotConfigured()
+    {
+        var runner = new BackupRunner(_runs, new FakeMetadataSnapshots([]), _blobs, _deletions, _format, [], Options(), TimeProvider.System);
+        var run = await QueueAsync();
+
+        var execution = await runner.RunQueuedAsync(run.Id, _ct);
+
+        Assert.Equal((BackupStatus.Failed, BackupErrors.Codes.TargetNotConfigured), (execution!.Run.Status, execution.Run.ErrorCode));
+    }
+
+    [Fact]
+    public async Task Recover_InterruptsRunningAndQueuedStreams_ReturnsQueuedStoredRunsOldestFirst()
+    {
+        var now = DateTime.UtcNow;
+        var running = BackupRun.Queue(BackupTriggers.Manual, BackupTargetTypes.Directory, BackupCompressions.Zstd, false, "root", now)
+            with { Status = BackupStatus.Running };
+        var stream = BackupRun.Queue(BackupTriggers.Api, BackupTargetTypes.Stream, BackupCompressions.Zstd, false, "root", now);
+        var queued = BackupRun.Queue(BackupTriggers.Manual, BackupTargetTypes.Directory, BackupCompressions.Zstd, false, "root", now);
+        foreach (var run in new[] { running, stream, queued })
+            _runs.Seed(run);
+
+        var wake = await Runner(new FakeMetadataSnapshots([])).RecoverAsync(_ct);
+
+        Assert.Equal([queued.Id], wake);
+        Assert.Equal(1, _target.IncompleteCleanups);
+        Assert.Equal(BackupStatus.Interrupted, (await _runs.FindBackupRunAsync(running.Id, _ct))!.Status);
+        Assert.Equal(BackupStatus.Interrupted, (await _runs.FindBackupRunAsync(stream.Id, _ct))!.Status);
+        Assert.Equal(BackupStatus.Queued, (await _runs.FindBackupRunAsync(queued.Id, _ct))!.Status);
+    }
+
+    // --- Helpers ---------------------------------------------------------------------------------------------------
+
+    private BackupRunner Runner(FakeMetadataSnapshots snapshots, long minFreeBytes = 0, string? masterKeyPath = null) =>
+        new(_runs, snapshots, _blobs, _deletions, _format, [_target], Options(minFreeBytes, masterKeyPath), TimeProvider.System);
+
+    private BackupOptions Options(long minFreeBytes = 0, string? masterKeyPath = null) => new(
+        "node-1", DataPath, Path.Combine(DataPath, "tmp"), masterKeyPath ?? Path.Combine(_root, "none.key"),
+        BackupCompressions.Zstd, 3, minFreeBytes);
+
+    private async Task<BackupRun> QueueAsync(bool includeMasterKey = false)
+    {
+        var run = BackupRun.Queue(BackupTriggers.Manual, BackupTargetTypes.Directory, BackupCompressions.Zstd, includeMasterKey, "root", DateTime.UtcNow);
+        Assert.True(await _runs.TryCreateBackupRunAsync(run, _ct));
+        return run;
+    }
+
+    private async Task<BlobLocator> BlobAsync(string content) =>
+        await _blobs.WriteAsync(new MemoryStream(System.Text.Encoding.UTF8.GetBytes(content)), _ct);
+
+    private async Task<byte[]> ReadAsync(BlobLocator blob)
+    {
+        await using var stream = await _blobs.OpenReadAsync(blob, _ct);
+        using var copy = new MemoryStream();
+        await stream.CopyToAsync(copy, _ct);
+        return copy.ToArray();
+    }
+
+    private async Task<Primitives.Result<RestoreSummary>> Restore(byte[] archive, string dataPath, string? masterKeyPath = null)
+    {
+        var file = Path.Combine(_root, $"{Guid.NewGuid():N}.tar.zst");
+        await File.WriteAllBytesAsync(file, archive, _ct);
+        return await new BackupRestorer(_format).RestoreAsync(
+            new RestoreRequest(file, dataPath, masterKeyPath ?? Path.Combine(dataPath, "master.key"), 10), _ct);
+    }
+}

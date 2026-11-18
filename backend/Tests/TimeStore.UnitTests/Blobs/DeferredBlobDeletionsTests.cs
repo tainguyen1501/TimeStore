@@ -112,4 +112,45 @@ public sealed class DeferredBlobDeletionsTests : IAsyncLifetime
 
         Assert.Equal(1, await _deletions.DeleteDueAsync());
     }
+
+    [Fact]
+    public async Task WhileHeld_DueBlobsWait_AndGoWhenTheLastHoldEnds()
+    {
+        var blob = await BlobAsync();
+        await _deletions.DeferAsync([blob]);
+        var first = _deletions.Hold();
+        var second = _deletions.Hold();
+
+        _clock.Advance(Delay * 2);
+        Assert.Equal(0, await _deletions.DeleteDueAsync());
+        Assert.True(Readable(blob));
+        Assert.True(_deletions.IsPending(blob.BlobId)); // the orphan sweep keeps away from it
+
+        await first.DisposeAsync();
+        await first.DisposeAsync(); // releasing twice counts once
+        Assert.True(_deletions.IsHeld);
+        Assert.True(Readable(blob));
+
+        await second.DisposeAsync();
+        Assert.False(_deletions.IsHeld);
+        Assert.False(Readable(blob)); // drained by the release itself, not the next tick
+        Assert.False(_deletions.IsPending(blob.BlobId));
+    }
+
+    [Fact]
+    public async Task WhileHeld_AZeroDelay_Queues_UntilTheHoldEnds()
+    {
+        var immediate = new DeferredBlobDeletions(_blobs, new BlobDeletionOptions(TimeSpan.Zero), _clock);
+        var blob = await BlobAsync();
+        var hold = immediate.Hold();
+
+        await immediate.DeferAsync([blob]);
+        Assert.True(Readable(blob));
+        Assert.True(immediate.IsPending(blob.BlobId));
+
+        await hold.DisposeAsync();
+        Assert.False(Readable(blob));
+        Assert.False(immediate.IsPending(blob.BlobId));
+        await immediate.DisposeAsync();
+    }
 }

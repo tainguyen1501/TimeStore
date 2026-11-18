@@ -180,6 +180,27 @@ always sorts after the key's newest (`VersionOrder.Next`). Writes read `buckets.
 `STRICT`. Parsed policies are cached per bucket name in memory (`BucketPolicyCache`) and dropped on PUT, DELETE and
 bucket deletion.
 
+### `backup_runs` (v10)
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | BLOB PK | UUIDv7: the primary key orders runs by time (list newest first, wake queued oldest first) |
+| `status` | TEXT | `queued`, `running`, `succeeded`, `failed`, `cancelled`, `interrupted` (CHECK) |
+| `trigger_type` | TEXT | `manual`, `api`, `schedule` |
+| `target_type`, `compression` | TEXT | `directory` \| `stream`; `zstd` \| `none` |
+| `include_master_key` | INTEGER | Whether the archive carries `master.key` |
+| `started_by` | TEXT | Access key that started it |
+| `queued_at`, `started_at`, `finished_at` | INTEGER | Unix ms UTC |
+| `snapshot_at` | INTEGER | Instant T of the metadata snapshot |
+| `blobs_total`, `blobs_done`, `bytes_total`, `bytes_done` | INTEGER | Progress (written every 2 s) |
+| `archive_name`, `archive_size`, `archive_sha256` | TEXT, INTEGER, TEXT | Set at start (name) and on success |
+| `error_code`, `error_message` | TEXT | Why it did not succeed (an `AppError` code; message ≤ 1024 characters) |
+
+`STRICT`. `ux_backup_runs_active`: a partial unique index (`WHERE status IN ('queued', 'running')`, one constant key)
+allows at most one active run; an insert that hits it means "a backup is already active". Running rows are marked
+`interrupted` at startup and never re-run. Snapshots (`VACUUM INTO tmp/backup-<id>.db`) leave this table and
+`admin_sessions` empty, so a restored server starts without history or sessions.
+
 ## Planned
 
 - Sizing estimate: 300–500 bytes per object row + index (100M objects ≈ 30–50 GB).

@@ -163,6 +163,41 @@ Roles: `none` (default: S3 only), `viewer`, `admin`.
 that carries a secret; it cannot be read again (stored encrypted). A disabled or deleted key fails S3 requests with
 `InvalidAccessKeyId` from the next request on. The root key from configuration is not listed and answers 404 here.
 
+## Backups
+
+Admins only, reads included (a viewer gets 403 `AUTH_FORBIDDEN`: an archive is the whole server). Design:
+`docs/research/backup.md`; operators: `docs/backup.md`.
+
+| Method | Path | Body | Success | Errors |
+|---|---|---|---|---|
+| POST | `/api/v1/backups` | `{ "target"?: "directory", "compression"?: "zstd" \| "none", "includeMasterKey"?: false }` | `202 BackupRunResponse` (queued), `Location` | 400 `BACKUP_INVALID_TARGET`, `BACKUP_INVALID_COMPRESSION`, `BACKUP_TARGET_NOT_CONFIGURED`; 409 `BACKUP_ACTIVE` |
+| GET | `/api/v1/backups` | — | `200 BackupRunResponse[]` (newest first, at most 100) | — |
+| GET | `/api/v1/backups/{id}` | — | `200 BackupRunResponse` | 404 `BACKUP_NOT_FOUND` |
+| POST | `/api/v1/backups/{id}/cancel` | — | `200 BackupRunResponse` (queued: cancelled at once; running: stops at its next blob, poll for the end) | 404, 409 `BACKUP_NOT_ACTIVE` |
+| GET | `/api/v1/backups/{id}/archive` | — | `200` the archive (`application/zstd` or `application/x-tar`, `Content-Disposition: attachment`, `no-store`) | 404 `BACKUP_NOT_FOUND`, `BACKUP_ARCHIVE_NOT_FOUND` |
+| GET | `/api/v1/backups/stream?compression=&includeMasterKey=` | — | `200` the archive, written while the backup runs; nothing is kept on the server | 400 `BACKUP_INVALID_COMPRESSION`, 409 `BACKUP_ACTIVE` |
+
+`BackupRunResponse`: `{ "id", "status", "trigger", "target", "compression", "includeMasterKey", "startedBy",
+"queuedAt", "startedAt"?, "finishedAt"?, "snapshotAt"?, "blobsTotal", "blobsDone", "bytesTotal", "bytesDone",
+"archiveName"?, "archiveSize"?, "archiveSha256"?, "errorCode"?, "errorMessage"? }`.
+
+- **Status:** `queued` → `running` → `succeeded` | `failed` | `cancelled` | `interrupted` (the server stopped or the
+  streaming client disconnected; never re-run automatically). At most one run is queued or running.
+- **Trigger:** `manual` (POST), `api` (stream), `schedule` (later). **Target:** `directory` (`TimeStore:Backup:Path`)
+  or `stream`.
+- **Progress** (`blobsDone`, `bytesDone`) is written every 2 s; `snapshotAt` is instant T, what the archive holds.
+- **Stream:** refusals are JSON before the first byte. A failure after it cuts the connection, so a client never
+  receives a truncated archive as a whole one (and a restore checks `blobs.sha256`, the last entry, anyway).
+- `errorCode` of a run that did not succeed: `BACKUP_BLOB_MISSING`, `BACKUP_BLOB_CORRUPT` (a blob does not match its
+  stored MD5 or size), `BACKUP_LOW_DISK_SPACE` (`Backup:MinFreeBytes`), `BACKUP_CANCELLED`, `BACKUP_INTERRUPTED`,
+  `BACKUP_TARGET_NOT_CONFIGURED` (queued before a restart that removed `Backup:Path`), `BACKUP_FAILED` (details in
+  the server log).
+- Every start, cancel, download and outcome is logged with the access key, never data or keys.
+
+The `restore` command (offline, `docs/backup.md`) reports `BACKUP_RESTORE_NOT_EMPTY`, `BACKUP_RESTORE_INVALID_ARCHIVE`,
+`BACKUP_RESTORE_UNSUPPORTED` (newer archive format or schema), `BACKUP_RESTORE_CHECKSUM_MISMATCH` and
+`BACKUP_RESTORE_MASTER_KEY_EXISTS`.
+
 ## Maintenance
 
 | Method | Path | Body | Success | Errors |

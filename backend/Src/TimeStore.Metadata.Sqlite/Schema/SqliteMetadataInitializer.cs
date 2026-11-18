@@ -11,6 +11,7 @@ public sealed class SqliteMetadataInitializer(SqliteConnectionFactory connection
     {
         if (Path.GetDirectoryName(Path.GetFullPath(connections.DatabasePath)) is { } directory)
             Directory.CreateDirectory(directory);
+        DeleteLeftoverSnapshots();
 
         await using var connection = await connections.OpenAsync(ct);
         await ExecuteAsync(connection, null, SqliteMigrations.EnableWal, ct);
@@ -34,6 +35,19 @@ public sealed class SqliteMetadataInitializer(SqliteConnectionFactory connection
 
             await transaction.CommitAsync(ct);
         }
+    }
+
+    /// <summary>The newest schema version this build knows (a restore refuses archives with a newer one).</summary>
+    public static int LatestVersion => SqliteMigrations.All.Length;
+
+    // Single node: nothing runs a backup before startup completes, so snapshot files are from a crash.
+    private void DeleteLeftoverSnapshots()
+    {
+        var snapshots = new DirectoryInfo(SqliteMetadataSnapshots.DirectoryOf(connections.DatabasePath));
+        if (!snapshots.Exists)
+            return;
+        foreach (var leftover in snapshots.EnumerateFiles(SqliteMetadataSnapshots.LeftoverPattern))
+            leftover.Delete();
     }
 
     private static async Task ExecuteAsync(

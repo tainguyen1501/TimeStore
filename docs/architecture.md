@@ -30,7 +30,11 @@ data/
   master.key               32-byte AES key for stored secrets (owner-only; TimeStore:MasterKeyFile moves it)
   blobs/<xy>/<uuidv7>      immutable blob files; <xy> = last two hex chars of the id
   tmp/<uuidv7>.tmp         in-flight writes; deleted at startup
+  tmp/backup-<run id>.*    a running backup's metadata snapshot and checksum list; deleted when it ends and at startup
 ```
+
+Backups (`docs/research/backup.md`): a blob hold on the deferred deletion queue, then a `VACUUM INTO` snapshot at
+instant T; every blob the snapshot references is archived (tar + Zstandard) with its MD5 checked.
 
 Object keys never become paths (no length, character or case-sensitivity problems).
 

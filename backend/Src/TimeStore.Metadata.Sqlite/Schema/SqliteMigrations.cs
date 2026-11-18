@@ -282,6 +282,38 @@ internal static class SqliteMigrations
         ALTER TABLE access_keys ADD COLUMN s3_scope TEXT NOT NULL DEFAULT 'full';
         """;
 
+    // Backups (stage B1): one row per run, before any work starts; at most one queued or running run (the partial
+    // unique index gives every active row the same key). Ids are UUIDv7, so the primary key orders runs by time.
+    // Statuses are the lowercase names (BackupStatusText).
+    private const string V10BackupRuns = """
+        CREATE TABLE backup_runs (
+            id                 BLOB    NOT NULL PRIMARY KEY,
+            status             TEXT    NOT NULL,
+            trigger_type       TEXT    NOT NULL,
+            target_type        TEXT    NOT NULL,
+            compression        TEXT    NOT NULL,
+            include_master_key INTEGER NOT NULL,
+            started_by         TEXT    NOT NULL,
+            queued_at          INTEGER NOT NULL,
+            started_at         INTEGER,
+            finished_at        INTEGER,
+            snapshot_at        INTEGER,
+            blobs_total        INTEGER NOT NULL,
+            blobs_done         INTEGER NOT NULL,
+            bytes_total        INTEGER NOT NULL,
+            bytes_done         INTEGER NOT NULL,
+            archive_name       TEXT,
+            archive_size       INTEGER,
+            archive_sha256     TEXT,
+            error_code         TEXT,
+            error_message      TEXT,
+            CHECK (status IN ('queued', 'running', 'succeeded', 'failed', 'cancelled', 'interrupted'))
+        ) STRICT;
+        CREATE UNIQUE INDEX ux_backup_runs_active ON backup_runs (status IN ('queued', 'running'))
+            WHERE status IN ('queued', 'running');
+        """;
+
     public static readonly string[] All =
-        [V1Buckets, V2Objects, V3AccessKeys, V4Multipart, V5AdminSessions, V6BucketUsage, V7Versioning, V8Lifecycle, V9BucketPolicies];
+        [V1Buckets, V2Objects, V3AccessKeys, V4Multipart, V5AdminSessions, V6BucketUsage, V7Versioning, V8Lifecycle, V9BucketPolicies,
+            V10BackupRuns];
 }

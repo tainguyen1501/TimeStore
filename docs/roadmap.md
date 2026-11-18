@@ -73,6 +73,12 @@ DeleteObjects) and returning stored checksums. `SigningKeyCache` became a bounde
 
 Items 4, 8 and 9 get their interfaces when the first code needs them (phases 2–5).
 
+10. Backups (`docs/research/backup.md`; B1 done, B2–B6 planned): on one node a backup is a `backup_runs` row (at most
+    one active, a partial unique index); with several nodes it runs under a lease (owner + expiry, item 8), holds blobs
+    on every node holding a replica and snapshots the shared metadata store. The engine (`BackupRunner`) takes the hold
+    (`IBlobHold`), snapshot source (`IMetadataSnapshots`), blob reader (`IBlobStore`) and target (`IBackupTarget`) as
+    interfaces for that reason.
+
 ## S3 operations
 
 | Operation | Status |

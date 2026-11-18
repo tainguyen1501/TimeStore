@@ -36,6 +36,29 @@ public class TimeStoreServer : IAsyncLifetime
     {
     }
 
+    /// <summary>Fills the data directory before the server starts (a fixture that restores a backup). Missing by default.</summary>
+    protected virtual ValueTask PrepareDataAsync(string dataPath) => ValueTask.CompletedTask;
+
+    /// <summary>
+    /// Runs the server binary as a command (<c>restore ...</c>) to its end: the same binary the tests start (the built
+    /// dll, or the AOT binary of <c>TIMESTORE_SERVER_BINARY</c>). Returns its exit code and its output.
+    /// </summary>
+    public static async Task<(int ExitCode, string Output)> RunCommandAsync(IEnumerable<string> args, CancellationToken ct)
+    {
+        var start = StartInfo();
+        foreach (var arg in args)
+            start.ArgumentList.Add(arg);
+        start.Environment["ASPNETCORE_ENVIRONMENT"] = "Production";
+        start.WorkingDirectory = AppContext.BaseDirectory;
+        start.RedirectStandardOutput = true;
+        start.RedirectStandardError = true;
+        using var process = Process.Start(start) ?? throw new InvalidOperationException("Could not start the command.");
+        var output = process.StandardOutput.ReadToEndAsync(ct);
+        var error = process.StandardError.ReadToEndAsync(ct);
+        await process.WaitForExitAsync(ct);
+        return (process.ExitCode, await output + await error);
+    }
+
     /// <summary>Polls <paramref name="condition"/> until it holds or a few seconds pass (background work on the server).</summary>
     public static async Task WaitUntilAsync(Func<bool> condition, CancellationToken ct)
     {
@@ -92,7 +115,34 @@ public class TimeStoreServer : IAsyncLifetime
     {
         S3Port = FreePort();
         AdminPort = FreePort();
+        await PrepareDataAsync(_dataPath);
+        await StartProcessAsync();
+    }
 
+    /// <summary>
+    /// Kills the server the way a crash or an OOM kill does (SIGKILL: no shutdown, nothing flushed or cleaned up) and
+    /// keeps its data directory, so <see cref="RestartAsync"/> can start it again on the same data.
+    /// </summary>
+    public async Task KillAsync()
+    {
+        if (_process is null)
+            return;
+        _process.Kill(entireProcessTree: true);
+        await _process.WaitForExitAsync();
+        _process.Dispose();
+        _process = null;
+    }
+
+    /// <summary>Starts the server again on the same data directory and ports, and waits until it is healthy.</summary>
+    public Task RestartAsync() => _process is null
+        ? StartProcessAsync()
+        : throw new InvalidOperationException("The server is still running; kill it first.");
+
+    /// <summary>What the server printed so far (all starts).</summary>
+    public string Log => Output();
+
+    private async Task StartProcessAsync()
+    {
         var start = StartInfo();
         start.Environment["ASPNETCORE_ENVIRONMENT"] = "Production";
         start.Environment["Logging__LogLevel__Default"] = "Warning";
@@ -117,7 +167,7 @@ public class TimeStoreServer : IAsyncLifetime
         await WaitUntilHealthyAsync();
     }
 
-    public async ValueTask DisposeAsync()
+    public virtual async ValueTask DisposeAsync()
     {
         if (_process is { HasExited: false })
         {
