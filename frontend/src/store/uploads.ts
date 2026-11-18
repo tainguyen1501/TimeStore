@@ -2,6 +2,7 @@ import { isCancel } from "axios"
 import { create } from "zustand"
 
 import { getErrorMessage } from "@/lib/api-response"
+import { randomId } from "@/lib/random-id"
 import { uploadFile } from "@/lib/upload"
 
 export type UploadStatus = "queued" | "uploading" | "done" | "failed" | "cancelled"
@@ -82,7 +83,7 @@ export const useUploadStore = create<UploadState>((set, get) => {
     items: [],
     enqueue: (bucket, prefix, list, onUploaded) => {
       const added = list.map((file) => {
-        const id = crypto.randomUUID()
+        const id = randomId()
         files.set(id, file)
         callbacks.set(id, onUploaded)
         // A dropped folder keeps its structure (webkitRelativePath: "folder/sub/file.txt").
