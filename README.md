@@ -13,7 +13,18 @@ disk before TimeStore answers, and the server idles at 40–70 MiB of memory.
 > admin UI are done and tested; replication across nodes comes next. See [what works](#what-works) and the
 > [roadmap](docs/roadmap.md).
 
-<!-- Screenshot of the admin UI goes here: docs/images/admin-ui.png -->
+![TimeStore admin UI: dashboard with buckets, S3 traffic, node status and disk usage](docs/images/admin-dashboard.png)
+
+<details>
+<summary><b>More screenshots</b>: object browser, preview, metrics</summary>
+
+![Object browser: a folder of photos in grid view with thumbnails](docs/images/admin-objects-grid.jpg)
+
+![Object preview with details, S3 URL and a share link](docs/images/admin-object-preview.jpg)
+
+![Metrics: storage, disk, requests, latency, traffic and errors over the last 15 minutes](docs/images/admin-metrics.png)
+
+</details>
 
 ## Why TimeStore
 

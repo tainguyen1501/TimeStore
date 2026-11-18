@@ -43,16 +43,17 @@ export function StatCard({
   return (
     <div className="flex flex-col justify-between gap-3 rounded-3xl bg-surface p-5">
       <span className="text-[13px] font-bold text-foreground">{title}</span>
-      <div className="flex items-end justify-between gap-3">
-        <div className="min-w-0">
-          <div className="font-heading text-[22px] font-extrabold tracking-tight text-foreground tabular-nums">
-            {value}
-          </div>
-          {sub && <p className="mt-0.5 text-[11px] text-muted-foreground">{sub}</p>}
+      {/* The value keeps its own line (a unit never wraps under its number); the line and the chart share the next. */}
+      <div className="min-w-0">
+        <div className="truncate font-heading text-[22px] font-extrabold tracking-tight whitespace-nowrap text-foreground tabular-nums">
+          {value}
         </div>
-        {history && (
-          <Sparkline values={history} className={cn("h-10 w-28 shrink-0", TEXT[accent])} />
-        )}
+        <div className="mt-1 flex items-end justify-between gap-3">
+          <p className="min-w-0 text-[11px] text-muted-foreground">{sub}</p>
+          {history && (
+            <Sparkline values={history} className={cn("h-9 w-24 shrink-0", TEXT[accent])} />
+          )}
+        </div>
       </div>
       {usage !== undefined && <UsageBar value={usage} className={BG[accent]} />}
     </div>
