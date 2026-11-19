@@ -16,15 +16,23 @@ internal static class ExceptionHandling
     {
         app.UseExceptionHandler(errors => errors.Run(async context =>
         {
+            var exception = context.Features.Get<IExceptionHandlerFeature>()?.Error;
             if (context.Connection.LocalPort == s3Port)
             {
-                await S3Errors.WriteAsync(
-                    context, S3ErrorCodes.InternalError, S3Messages.InternalError,
-                    StatusCodes.Status500InternalServerError);
+                // Kestrel's own refusals of a body (too large for the request's limit, sent too slowly) are the
+                // client's: answer them as S3 does, not as an internal error.
+                var (code, message, status) = exception is BadHttpRequestException failure
+                    ? failure.StatusCode switch
+                    {
+                        StatusCodes.Status413PayloadTooLarge => (S3ErrorCodes.MaxMessageLengthExceeded, S3Messages.MaxMessageLengthExceeded, StatusCodes.Status400BadRequest),
+                        StatusCodes.Status408RequestTimeout => (S3ErrorCodes.RequestTimeout, S3Messages.RequestTimeout, StatusCodes.Status400BadRequest),
+                        _ => (S3ErrorCodes.InternalError, S3Messages.InternalError, StatusCodes.Status500InternalServerError),
+                    }
+                    : (S3ErrorCodes.InternalError, S3Messages.InternalError, StatusCodes.Status500InternalServerError);
+                await S3Errors.WriteAsync(context, code, message, status);
                 return;
             }
 
-            var exception = context.Features.Get<IExceptionHandlerFeature>()?.Error;
             var error = exception is BadHttpRequestException ? CommonErrors.InvalidRequest : CommonErrors.Internal;
             await ApiResults.Error(error, context).ExecuteAsync(context);
         }));

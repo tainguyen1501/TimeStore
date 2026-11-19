@@ -168,7 +168,7 @@ internal static class AdminObjectApi
     private static async Task<Results<Ok<ObjectWrittenResponse>, JsonHttpResult<ErrorResponse>>> PutAsync(
         string bucket, [FromQuery] string key, IObjectBrowserService service, HttpContext http, CancellationToken ct)
     {
-        AllowBodyUpTo(http, StoredObject.SinglePutMaxBytes);
+        RequestBodyLimit.Allow(http, StoredObject.SinglePutMaxBytes);
         return ApiResults.OkOrError(
             await service.PutAsync(bucket, key, http.Request.ContentType, http.Request.ContentLength, http.Request.Body, ct), http);
     }
@@ -185,7 +185,7 @@ internal static class AdminObjectApi
         string bucket, string uploadId, int partNumber, [FromQuery] string key, IObjectBrowserService service,
         HttpContext http, CancellationToken ct)
     {
-        AllowBodyUpTo(http, StoredObject.SinglePutMaxBytes);
+        RequestBodyLimit.Allow(http, StoredObject.SinglePutMaxBytes);
         return ApiResults.OkOrError(
             await service.UploadPartAsync(bucket, key, uploadId, partNumber, http.Request.ContentLength, http.Request.Body, ct), http);
     }
@@ -201,13 +201,6 @@ internal static class AdminObjectApi
     {
         var result = await service.AbortUploadAsync(bucket, key, uploadId, ct);
         return result.IsSuccess ? TypedResults.NoContent() : ApiResults.Error(result.Error, http);
-    }
-
-    /// <summary>Kestrel's default body limit (30 MB) is for JSON; uploads may be as large as S3 allows per request.</summary>
-    private static void AllowBodyUpTo(HttpContext http, long maxBytes)
-    {
-        if (http.Features.Get<IHttpMaxRequestBodySizeFeature>() is { IsReadOnly: false } limit)
-            limit.MaxRequestBodySize = maxBytes;
     }
 
     /// <summary>The last segment of the key ("photos/2026/cat.jpg" → "cat.jpg").</summary>

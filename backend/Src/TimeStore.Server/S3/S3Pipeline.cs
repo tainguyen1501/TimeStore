@@ -3,6 +3,9 @@ using TimeStore.Cryptography.Checksums;
 using TimeStore.Protocol.Auth;
 using TimeStore.Protocol.Streaming;
 using TimeStore.Protocol.Routing;
+using TimeStore.Application.Features.Objects;
+using TimeStore.Application.Features.Uploads;
+using TimeStore.Domain.Objects;
 using TimeStore.Server.Admin;
 
 namespace TimeStore.Server.S3;
@@ -143,6 +146,26 @@ internal static class S3Pipeline
     }
 
     /// <summary>
+    /// PutObject and UploadPart take up to 5 GiB, not Kestrel's 30 MB. A plain body is capped at that size. An
+    /// aws-chunked body is larger on the wire than its payload (chunk headers and signatures, any chunk size), so it is
+    /// not capped by Kestrel: <c>x-amz-decoded-content-length</c> is checked against the limit before the body is read
+    /// (<see cref="ObjectValidation"/>, <see cref="UploadValidation"/>), and the decoding stream refuses every byte
+    /// beyond it.
+    /// </summary>
+    private static void AllowUploadBody(HttpContext context, S3RequestFeature feature)
+    {
+        long? payloadLimit = feature.Operation switch
+        {
+            PutObject => StoredObject.SinglePutMaxBytes,
+            UploadPart => Domain.Uploads.MultipartUpload.MaxPartSize,
+            _ => null,
+        };
+        if (payloadLimit is null)
+            return;
+        RequestBodyLimit.Allow(context, feature.Principal!.PayloadMode is PayloadMode.Sha256 or PayloadMode.Unsigned ? payloadLimit : null);
+    }
+
+    /// <summary>
     /// Replaces the request body with a verifying stream (aws-chunked decoding, chunk and trailer signatures,
     /// payload hash, checksums). Failures surface when the handler reads the body, before anything is committed.
     /// </summary>
@@ -156,6 +179,7 @@ internal static class S3Pipeline
         if (opened.IsFailure)
             return S3Errors.WriteAsync(context, opened.Error);
 
+        AllowUploadBody(context, feature);
         if (!ReferenceEquals(opened.Value.Body, request.Body))
             context.Response.RegisterForDispose(opened.Value.Body); // returns pooled buffers at the end of the request
         request.Body = opened.Value.Body;

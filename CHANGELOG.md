@@ -65,6 +65,12 @@ The first public release, 0.1.0. A single-node, S3-compatible object storage ser
 - Helm chart for Kubernetes (`deploy/helm/timestore`, published as `oci://ghcr.io/tainguyen1501/charts/timestore`),
   with a backups claim (`backup.existingClaim`) and restore steps (a Job, in place or side by side).
 
+### Fixed
+
+- S3 `PutObject` and `UploadPart` bodies over 30 MB (Kestrel's default limit) failed with 500; they now take up to
+  5 GiB as S3 allows (rclone sends files up to 200 MiB in one PutObject). A body Kestrel refuses (too large, sent too
+  slowly) is answered with the S3 error (`MaxMessageLengthExceeded`, `RequestTimeout`), not `InternalError`.
+
 ### Known limits
 
 - Single node only; replication across nodes is planned (`docs/roadmap.md`, phase 8).

@@ -46,6 +46,8 @@ public static class S3ErrorCodes
     public const string OperationAborted = "OperationAborted";
     public const string PreconditionFailed = "PreconditionFailed";
     public const string SignatureDoesNotMatch = "SignatureDoesNotMatch";
+    public const string MaxMessageLengthExceeded = "MaxMessageLengthExceeded";
+    public const string RequestTimeout = "RequestTimeout";
 }
 
 /// <summary>Element names of S3 XML documents.</summary>
@@ -81,4 +83,7 @@ public static class S3Messages
     public const string MethodNotAllowed = "The specified method is not allowed against this resource.";
     public const string KeyTooLong = "Your key is too long.";
     public const string InternalError = "We encountered an internal error. Please try again.";
+    public const string MaxMessageLengthExceeded = "Your request was too big.";
+    public const string RequestTimeout =
+        "Your socket connection to the server was not read from or written to within the timeout period.";
 }
