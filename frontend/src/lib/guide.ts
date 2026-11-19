@@ -19,7 +19,7 @@ export type GuideDoc = {
 }
 
 /** Reading order; files not listed come after, by name. */
-const ORDER = ["README", "sign-in", "objects", "access-keys", "metrics"]
+const ORDER = ["README", "sign-in", "objects", "access-keys", "metrics", "backups"]
 
 const titleOf = (markdown: string, id: string) =>
   markdown.match(/^# (.+)$/m)?.[1].trim() ?? id.replace(/-/g, " ")

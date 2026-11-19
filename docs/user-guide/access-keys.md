@@ -24,7 +24,8 @@ Viewers see the list only.
 
 The **⋮** menu at the end of a key:
 
-- **Admin UI access**: pick S3 only, Viewer or Admin. The change ends the key's admin sessions at once.
+- **Admin UI access**: pick S3 only, Viewer, Admin or Backup (for backup programs: [Backups](backups.md)). The change
+  ends the key's admin sessions at once.
 - **S3 access**: All buckets or Bucket policies only. S3 clients see the change from their next request.
 - **Disable** / **Enable**: a disabled key keeps its id and secret and works again once enabled.
 - **Delete**: type the key id to confirm. Clients using it fail from their next request; this cannot be undone.

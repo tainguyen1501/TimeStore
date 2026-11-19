@@ -86,9 +86,12 @@ curl -fsS "${SIGN[@]}" -OJ "$ADMIN/api/v1/backups/<id>/archive"       # download
 
 One backup runs at a time. A backup that is running when the server stops (or crashes) is marked `interrupted` and is
 not started again: start a new one. What it left (the `.partial` file, its snapshot in `<DataPath>/tmp/`) is removed at
-the next start, and the blobs it kept from deletion are reclaimed by the orphan sweep. Blobs that writes release during a backup stay on disk until it ends, so a backup refuses to
-start when the data directory has less than `Backup:MinFreeBytes` free (1 GiB by default). Settings:
-[configuration](configuration.md).
+the next start, and the blobs it kept from deletion are reclaimed by the orphan sweep. Blobs that writes release
+during a backup stay on disk until it ends, so a backup refuses to start when the data directory has less than
+`Backup:MinFreeBytes` free (1 GiB by default). Settings: [configuration](configuration.md).
+
+A walkthrough for users, with the answers to expect at each step (a backup key, a first backup, checking the file, a
+test restore into a second server): [user guide, Backups](user-guide/backups.md).
 
 ### Restore an archive
 
