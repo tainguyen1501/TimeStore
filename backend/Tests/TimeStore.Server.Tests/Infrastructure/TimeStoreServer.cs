@@ -20,6 +20,8 @@ public class TimeStoreServer : IAsyncLifetime
     public const string Region = "us-east-1";
     private const string BinaryVariable = "TIMESTORE_SERVER_BINARY";
     private static readonly TimeSpan StartTimeout = TimeSpan.FromSeconds(30);
+    private const int StartAttempts = 5;
+    private const string AddressInUse = "address already in use";
 
     private readonly string _dataPath = Path.Combine(Path.GetTempPath(), "timestore-e2e", Guid.NewGuid().ToString("N"));
     private readonly StringBuilder _output = new();
@@ -120,10 +122,26 @@ public class TimeStoreServer : IAsyncLifetime
 
     public async ValueTask InitializeAsync()
     {
-        S3Port = FreePort();
-        AdminPort = FreePort();
         await PrepareDataAsync(_dataPath);
-        await StartProcessAsync();
+        for (var attempt = 1; ; attempt++)
+        {
+            // A free port is only free when it is probed: until the server binds it, a fixture running in parallel or
+            // an outgoing connection (its local port comes from the same range) may take it. Then try other ports.
+            S3Port = FreePort();
+            AdminPort = FreePort();
+            var outputBefore = Output().Length;
+            try
+            {
+                await StartProcessAsync();
+                return;
+            }
+            catch (InvalidOperationException) when (attempt < StartAttempts
+                && Output()[outputBefore..].Contains(AddressInUse, StringComparison.OrdinalIgnoreCase))
+            {
+                _process?.Dispose();
+                _process = null;
+            }
+        }
     }
 
     /// <summary>

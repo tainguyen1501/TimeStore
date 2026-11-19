@@ -6,22 +6,41 @@ namespace TimeStore.Server.Tests.Infrastructure;
 /// <summary>Serves one file over plain HTTP on a free loopback port (404 for anything else): an archive behind a URL.</summary>
 public sealed class FileHttpServer : IAsyncDisposable
 {
-    private readonly HttpListener _listener = new();
+    private const int StartAttempts = 5;
+
+    private readonly HttpListener _listener;
     private readonly Task _loop;
 
     public FileHttpServer(string path)
     {
-        int port;
-        using (var probe = new TcpListener(IPAddress.Loopback, 0))
+        var name = Path.GetFileName(path);
+        for (var attempt = 1; ; attempt++)
         {
-            probe.Start();
-            port = ((IPEndPoint)probe.LocalEndpoint).Port;
+            int port;
+            using (var probe = new TcpListener(IPAddress.Loopback, 0))
+            {
+                probe.Start();
+                port = ((IPEndPoint)probe.LocalEndpoint).Port;
+            }
+
+            // The probed port may be taken before the listener binds it (see TimeStoreServer): try another one.
+            var listener = new HttpListener();
+            listener.Prefixes.Add($"http://127.0.0.1:{port}/");
+            try
+            {
+                listener.Start();
+            }
+            catch (HttpListenerException) when (attempt < StartAttempts)
+            {
+                listener.Close();
+                continue;
+            }
+
+            _listener = listener;
+            Url = $"http://127.0.0.1:{port}/{name}";
+            break;
         }
 
-        var name = Path.GetFileName(path);
-        Url = $"http://127.0.0.1:{port}/{name}";
-        _listener.Prefixes.Add($"http://127.0.0.1:{port}/");
-        _listener.Start();
         _loop = Task.Run(async () =>
         {
             while (_listener.IsListening)
