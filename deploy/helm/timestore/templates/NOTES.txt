@@ -25,7 +25,8 @@ WARNING: the admin UI is exposed without TLS: sign-in sends a secret key in clea
 {{- end }}
 
 Backups (the server keeps running; docs/backup.md):
-  sign in through the admin port, then  curl -fsS -b cookies -OJ http://127.0.0.1:9001/api/v1/backups/stream
+  with an access key of role "backup" (admin UI → Access keys), through the admin port:
+    curl -fsS --aws-sigv4 "aws:amz:{{ .Values.config.region }}:s3" --user "<key>:<secret>" -OJ http://127.0.0.1:9001/api/v1/backups/stream
 {{- if .Values.backup.existingClaim }}
   or POST /api/v1/backups: archives go to the claim {{ .Values.backup.existingClaim }}, folder {{ .Release.Name }}/
 {{- end }}

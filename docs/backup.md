@@ -41,8 +41,20 @@ master.key                    only when asked for (off by default)
 blobs.sha256                  checksum of every entry above (sha256sum format), last
 ```
 
-Only admins can start, list, download or stream backups. The master key is **not** in the archive unless you ask for
-it (`includeMasterKey=true`): keep the key apart (see below) and an archive alone cannot decrypt the access-key secrets.
+### Who can back up: signed requests, a backup key
+
+The backup API (`/api/v1/backups`) is for **programs** (a CronJob, TimeOps, a script), not for the admin UI: every
+request is signed with AWS Signature Version 4, exactly like an S3 request, by an access key with the **`backup`**
+role (or `admin`). Sign-in cookies are refused, so a browser cannot run backups.
+
+- Create a key for each program that backs up: **Access keys → Create**, role **Backup**, S3 scope **Policy only**
+  (with no bucket policy it has no S3 access at all). A backup key calls the backup API only; it cannot sign in to the
+  admin UI and never gets an archive with the master key. Keep it in a secret store: an archive holds all the data.
+- The secret key never travels: the client signs each request with it (valid for 15 minutes), as the AWS CLI does.
+  `curl` 7.75 or newer signs with `--aws-sigv4`; the AWS SDKs sign any HTTP request too.
+
+The master key is **not** in the archive unless an **admin key** asks for it (`includeMasterKey=true`): keep the key
+apart (see below) and an archive alone cannot decrypt the access-key secrets.
 
 ### Download a backup as a stream
 
@@ -50,10 +62,11 @@ Nothing is kept on the server: the archive is written straight into the response
 
 ```bash
 ADMIN=http://127.0.0.1:9001
-curl -s -c cookies -H "Origin: $ADMIN" -H 'Content-Type: application/json' \
-  -d '{"accessKeyId":"<admin key>","secretKey":"<secret>"}' "$ADMIN/api/v1/auth/login"
-curl -fsS -b cookies -OJ "$ADMIN/api/v1/backups/stream"          # timestore-node-1-20261118T020000Z.tar.zst
-curl -fsS -b cookies -OJ "$ADMIN/api/v1/backups/stream?compression=none&includeMasterKey=true"
+# The backup API takes requests signed like S3 requests (SigV4), not sign-in cookies. Use a key with the
+# "backup" role (or an admin key); curl signs with --aws-sigv4 (region: TimeStore:S3:Region, default us-east-1).
+SIGN=(--aws-sigv4 "aws:amz:us-east-1:s3" --user "<access key>:<secret key>")
+curl -fsS "${SIGN[@]}" -OJ "$ADMIN/api/v1/backups/stream"                      # timestore-node-1-20261118T020000Z.tar.zst
+curl -fsS "${SIGN[@]}" -OJ "$ADMIN/api/v1/backups/stream?compression=none"     # a plain .tar
 ```
 
 If the backup fails after it started, the connection is cut (`curl -f` exits non-zero): a partial download never
@@ -66,9 +79,9 @@ volume (a copy on the same disk does not survive the disk). Then start a backup 
 backup worker writes `<name>.partial` and renames it when the archive is complete.
 
 ```bash
-curl -s -b cookies -H "Origin: $ADMIN" -H 'Content-Type: application/json' -d '{}' "$ADMIN/api/v1/backups"
-curl -s -b cookies "$ADMIN/api/v1/backups"                           # status, progress, archiveName, archiveSha256
-curl -fsS -b cookies -OJ "$ADMIN/api/v1/backups/<id>/archive"         # download it later
+curl -s "${SIGN[@]}" -H 'Content-Type: application/json' -d '{}' "$ADMIN/api/v1/backups"
+curl -s "${SIGN[@]}" "$ADMIN/api/v1/backups"                         # status, progress, archiveName, archiveSha256
+curl -fsS "${SIGN[@]}" -OJ "$ADMIN/api/v1/backups/<id>/archive"       # download it later
 ```
 
 One backup runs at a time. A backup that is running when the server stops (or crashes) is marked `interrupted` and is

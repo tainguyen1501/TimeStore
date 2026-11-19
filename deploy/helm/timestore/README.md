@@ -100,17 +100,17 @@ work from outside. With TLS on the admin ingress, the session cookie is marked `
 ## Back up
 
 TimeStore backs itself up while it runs: one archive of the server at an instant, every blob checked
-([docs/backup.md](../../../docs/backup.md)). Only admin keys may back up. Replace `ts` with your release and `storage`
-with the namespace.
+([docs/backup.md](../../../docs/backup.md)). The backup API takes requests signed like S3 requests (SigV4), not sign-in
+cookies: create an access key with the **Backup** role in the admin UI and sign with it (`curl --aws-sigv4`, any AWS
+SDK). Replace `ts` with your release and `storage` with the namespace.
 
 **Stream** an archive to your machine (nothing is kept in the cluster):
 
 ```bash
 kubectl -n storage port-forward svc/ts-timestore-admin 9001:9001 &   # 9001 taken here? 19001:9001 and :19001 below
 ADMIN=http://127.0.0.1:9001
-curl -s -c cookies -H "Origin: $ADMIN" -H 'Content-Type: application/json' \
-  -d '{"accessKeyId":"admin","secretKey":"<root secret>"}' "$ADMIN/api/v1/auth/login"
-curl -fsS -b cookies -OJ "$ADMIN/api/v1/backups/stream"      # timestore-node-1-<time>.tar.zst
+SIGN=(--aws-sigv4 "aws:amz:us-east-1:s3" --user "<backup key>:<secret>")   # region: config.region
+curl -fsS "${SIGN[@]}" -OJ "$ADMIN/api/v1/backups/stream"   # timestore-node-1-<time>.tar.zst
 ```
 
 **Keep archives in the cluster:** create a claim for them yourself
@@ -122,8 +122,8 @@ storage class works, archives are plain files) and point `backup.existingClaim` 
 kubectl -n storage apply -f examples/backups-claim.yaml
 helm upgrade ts oci://ghcr.io/tainguyen1501/charts/timestore -n storage --reuse-values \
   --set backup.existingClaim=timestore-backups
-curl -s -b cookies -H "Origin: $ADMIN" -H 'Content-Type: application/json' -d '{}' "$ADMIN/api/v1/backups"
-curl -s -b cookies "$ADMIN/api/v1/backups"                      # status, archiveName (in the claim's folder ts/)
+curl -s "${SIGN[@]}" -H 'Content-Type: application/json' -d '{}' "$ADMIN/api/v1/backups"
+curl -s "${SIGN[@]}" "$ADMIN/api/v1/backups"                 # status, archiveName (in the claim's folder ts/)
 ```
 
 With `ReadWriteOnce` claims on node-local storage (k3s `local-path`), both claims bind to the pod's node.

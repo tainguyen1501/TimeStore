@@ -61,7 +61,7 @@ public sealed class BackupCrashTests(SlowBackupServer server) : IClassFixture<Sl
 
         // 2. Start a backup and wait until it is in the middle: snapshot taken, archive being written.
         Guid runId;
-        using (var admin = await server.AdminClientAsync())
+        using (var admin = server.BackupClient())
         {
             var started = await admin.PostAsJsonAsync(Backups, new StartBackupRequest(Compression: "zstd"), Json, _ct);
             Assert.Equal(HttpStatusCode.Accepted, started.StatusCode);
@@ -87,7 +87,8 @@ public sealed class BackupCrashTests(SlowBackupServer server) : IClassFixture<Sl
         // 5. Restart on the same data.
         await server.RestartAsync();
 
-        using var client = await server.AdminClientAsync();
+        using var client = server.BackupClient(); // the backup API
+        using var console = await server.AdminClientAsync(); // the maintenance API (admin UI): sign-in cookie
         var run = (await client.GetFromJsonAsync<BackupRunResponse>($"{Backups}/{runId}", Json, _ct))!;
         Assert.Equal((BackupRunStatuses.Interrupted, BackupErrors.Codes.Interrupted), (run.Status, run.ErrorCode));
         Assert.NotNull(run.FinishedAt);
@@ -117,7 +118,7 @@ public sealed class BackupCrashTests(SlowBackupServer server) : IClassFixture<Sl
         var old = DateTime.UtcNow - TimeSpan.FromDays(1);
         foreach (var file in Directory.EnumerateFiles(BlobsPath, "*", SearchOption.AllDirectories))
             File.SetLastWriteTimeUtc(file, old);
-        var sweep = await client.PostAsync("/api/v1/maintenance/blob-sweep", null, _ct);
+        var sweep = await console.PostAsync("/api/v1/maintenance/blob-sweep", null, _ct);
         Assert.Equal(HttpStatusCode.OK, sweep.StatusCode);
         Assert.Equal(1, (await sweep.Content.ReadFromJsonAsync<BlobSweepResponse>(Json, _ct))!.Deleted);
         Assert.DoesNotContain(heldBlob, BlobFiles());

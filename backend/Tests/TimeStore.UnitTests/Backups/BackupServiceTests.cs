@@ -19,6 +19,8 @@ public sealed class BackupServiceTests : IAsyncDisposable
     private readonly BackupRunner _runner;
 
     private static readonly BackupOptions Options = new("node-1", ".", "tmp", "master.key", BackupCompressions.Zstd, 3, 0);
+    private static readonly BackupCaller Admin = new("root", MayIncludeMasterKey: true);
+    private static readonly BackupCaller BackupKey = new("backup-job", MayIncludeMasterKey: false);
 
     public BackupServiceTests()
     {
@@ -36,7 +38,7 @@ public sealed class BackupServiceTests : IAsyncDisposable
     [Fact]
     public async Task Start_QueuesARun_AndWakesTheWorker()
     {
-        var result = await Service().StartAsync(new StartBackupRequest(), "root", _ct);
+        var result = await Service().StartAsync(new StartBackupRequest(), Admin, _ct);
 
         var run = result.Value;
         Assert.Equal((BackupRunStatuses.Queued, "manual", "directory", "zstd", "root", false),
@@ -52,9 +54,9 @@ public sealed class BackupServiceTests : IAsyncDisposable
     public async Task Start_WhileOneIsActive_IsRefused()
     {
         var service = Service();
-        await service.StartAsync(new StartBackupRequest(), "root", _ct);
+        await service.StartAsync(new StartBackupRequest(), Admin, _ct);
 
-        Assert.Equal(BackupErrors.Codes.Active, (await service.StartAsync(new StartBackupRequest(), "root", _ct)).Error.Code);
+        Assert.Equal(BackupErrors.Codes.Active, (await service.StartAsync(new StartBackupRequest(), Admin, _ct)).Error.Code);
     }
 
     [Theory]
@@ -62,18 +64,18 @@ public sealed class BackupServiceTests : IAsyncDisposable
     [InlineData("stream", null, BackupErrors.Codes.InvalidTarget)]
     [InlineData("s3", null, BackupErrors.Codes.InvalidTarget)]
     public async Task Start_WithBadInput_IsRefused(string? target, string? compression, string code) =>
-        Assert.Equal(code, (await Service().StartAsync(new StartBackupRequest(target, compression), "root", _ct)).Error.Code);
+        Assert.Equal(code, (await Service().StartAsync(new StartBackupRequest(target, compression), Admin, _ct)).Error.Code);
 
     [Fact]
     public async Task Start_WithoutABackupDirectory_SaysSo() =>
         Assert.Equal(BackupErrors.Codes.TargetNotConfigured,
-            (await Service(withDirectory: false).StartAsync(new StartBackupRequest(), "root", _ct)).Error.Code);
+            (await Service(withDirectory: false).StartAsync(new StartBackupRequest(), Admin, _ct)).Error.Code);
 
     [Fact]
     public async Task Cancel_AQueuedRun_EndsIt_AndTheWorkerSkipsIt()
     {
         var service = Service();
-        var run = (await service.StartAsync(new StartBackupRequest(), "root", _ct)).Value;
+        var run = (await service.StartAsync(new StartBackupRequest(), Admin, _ct)).Value;
 
         var cancelled = await service.CancelAsync(run.Id, _ct);
 
@@ -87,7 +89,7 @@ public sealed class BackupServiceTests : IAsyncDisposable
     public async Task OpenArchive_OnlyForASucceededRunWithAStoredArchive()
     {
         var service = Service();
-        var run = (await service.StartAsync(new StartBackupRequest(), "root", _ct)).Value;
+        var run = (await service.StartAsync(new StartBackupRequest(), Admin, _ct)).Value;
         Assert.Equal(BackupErrors.Codes.ArchiveNotFound, (await service.OpenArchiveAsync(run.Id, _ct)).Error.Code);
 
         await _runner.RunQueuedAsync(run.Id, _ct);
@@ -105,11 +107,27 @@ public sealed class BackupServiceTests : IAsyncDisposable
     {
         var target = new MemoryBackupTarget(BackupTargetTypes.Stream);
 
-        var (result, exception) = await Service().StreamAsync(BackupCompressions.None, false, "root", target, _ct);
+        var (result, exception) = await Service().StreamAsync(BackupCompressions.None, false, Admin, target, _ct);
 
         Assert.Null(exception);
         Assert.Equal((BackupRunStatuses.Succeeded, "api", "stream"), (result.Value.Status, result.Value.Trigger, result.Value.Target));
         Assert.EndsWith(".tar", Assert.Single(target.Archives).Key);
         Assert.Contains(await Service().ListAsync(_ct), r => r.Id == result.Value.Id);
+    }
+
+    [Fact]
+    public async Task OnlyAnAdmin_MayIncludeTheMasterKey()
+    {
+        var service = Service();
+
+        Assert.Equal(BackupErrors.Codes.MasterKeyForbidden,
+            (await service.StartAsync(new StartBackupRequest(IncludeMasterKey: true), BackupKey, _ct)).Error.Code);
+        var (streamed, _) = await service.StreamAsync(null, includeMasterKey: true, BackupKey,
+            new MemoryBackupTarget(BackupTargetTypes.Stream), _ct);
+        Assert.Equal(BackupErrors.Codes.MasterKeyForbidden, streamed.Error.Code);
+        Assert.Empty(await service.ListAsync(_ct)); // refused before any run is created
+
+        var started = await service.StartAsync(new StartBackupRequest(), BackupKey, _ct);
+        Assert.Equal("backup-job", started.Value.StartedBy);
     }
 }

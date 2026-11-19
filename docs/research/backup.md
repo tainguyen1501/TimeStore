@@ -173,7 +173,9 @@ it once B1 lands (backup, then restore, then compare).
 
 ## 9. Security
 
-- Only admins start, list, download or delete backups; every action is logged (who, what, archive name).
+- The backup API is for programs: requests signed with SigV4 by a key with the `backup` or `admin` role, never
+  sign-in cookies (a browser cannot start a backup or carry an archive). A `backup` key reaches the backup API only.
+  Every action is logged (who, what, archive name). (Decided 2026-11-19, replacing the B1 cookie sessions.)
 - The **master key is not included by default**: an archive alone cannot decrypt access-key secrets. A backup asks for
   it explicitly; the manifest says whether it is in. Without it a restore needs the key kept apart (`docs/backup.md`).
 - Archives are not encrypted in B1–B4 (the target's own encryption applies); archive encryption is stage B6.

@@ -46,7 +46,8 @@ config:
   sessionHours: 24
 
 # Built-in backups of the running server (docs/backup.md). Streaming one always works:
-#   kubectl port-forward svc/<release>-timestore-admin 9001, sign in, curl -OJ http://127.0.0.1:9001/api/v1/backups/stream
+#   kubectl port-forward svc/<release>-timestore-admin 9001, then with a key of role "backup":
+#   curl --aws-sigv4 "aws:amz:<config.region>:s3" --user "<key>:<secret>" -OJ http://127.0.0.1:9001/api/v1/backups/stream
 backup:
   # A PersistentVolumeClaim you create, apart from the data claim: backups started from the admin API are written there,
   # in the folder <release>/ (Backup:Path=/backups/<release>, so several releases can share one claim). Created by you so

@@ -21,6 +21,7 @@
 
     <ItemGroup>
         <Compile Include="..\TimeStore.Server.Tests\Infrastructure\TimeStoreServer.cs" Link="Infrastructure\TimeStoreServer.cs" />
+        <Compile Include="..\TimeStore.Server.Tests\Infrastructure\SigV4SigningHandler.cs" Link="Infrastructure\SigV4SigningHandler.cs" />
     </ItemGroup>
 
     <ItemGroup>

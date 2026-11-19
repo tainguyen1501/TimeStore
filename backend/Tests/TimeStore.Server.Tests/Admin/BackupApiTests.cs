@@ -8,7 +8,10 @@ using Amazon.S3.Model;
 using TimeStore.Application.Features.Backups;
 using TimeStore.Contracts.AccessKeys;
 using TimeStore.Contracts.Backups;
+using TimeStore.Application.Features.Auth;
 using TimeStore.Contracts.Common;
+using TimeStore.Domain.AccessKeys;
+using TimeStore.Protocol.Auth;
 using TimeStore.Server.Tests.Infrastructure;
 
 namespace TimeStore.Server.Tests.Admin;
@@ -24,17 +27,20 @@ public sealed class BackupApiTests(BackupServer server) : IClassFixture<BackupSe
     private static readonly JsonSerializerOptions Json = JsonSerializerOptions.Web;
     private readonly CancellationToken _ct = TestContext.Current.CancellationToken;
     private readonly string _scratch = Path.Combine(Path.GetTempPath(), "timestore-e2e-archives", Guid.NewGuid().ToString("N"));
-    private HttpClient _admin = null!;
+    private HttpClient _admin = null!; // the admin UI API (access keys): sign-in cookie
+    private HttpClient _backup = null!; // the backup API: SigV4, root key
 
     public async ValueTask InitializeAsync()
     {
         Directory.CreateDirectory(_scratch);
         _admin = await server.AdminClientAsync();
+        _backup = server.BackupClient();
     }
 
     public ValueTask DisposeAsync()
     {
         _admin.Dispose();
+        _backup.Dispose();
         if (Directory.Exists(_scratch))
             Directory.Delete(_scratch, recursive: true);
         return ValueTask.CompletedTask;
@@ -150,7 +156,7 @@ public sealed class BackupApiTests(BackupServer server) : IClassFixture<BackupSe
         await s3.PutBucketAsync("stored", _ct);
         await PutAsync(s3, "stored", "a.txt", "in the directory");
 
-        var started = await _admin.PostAsJsonAsync(Backups, new StartBackupRequest(Compression: "none"), Json, _ct);
+        var started = await _backup.PostAsJsonAsync(Backups, new StartBackupRequest(Compression: "none"), Json, _ct);
         Assert.Equal(HttpStatusCode.Accepted, started.StatusCode);
         var run = (await started.Content.ReadFromJsonAsync<BackupRunResponse>(Json, _ct))!;
         Assert.Equal(("manual", "directory", "none"), (run.Trigger, run.Target, run.Compression));
@@ -164,7 +170,7 @@ public sealed class BackupApiTests(BackupServer server) : IClassFixture<BackupSe
         Assert.True(File.Exists(file));
         Assert.Empty(Directory.GetFiles(server.BackupPath, "*.partial"));
 
-        using var download = await _admin.GetAsync($"{Backups}/{run.Id}/archive", HttpCompletionOption.ResponseHeadersRead, _ct);
+        using var download = await _backup.GetAsync($"{Backups}/{run.Id}/archive", HttpCompletionOption.ResponseHeadersRead, _ct);
         Assert.Equal(HttpStatusCode.OK, download.StatusCode);
         Assert.Equal("application/x-tar", download.Content.Headers.ContentType?.MediaType);
         var bytes = await download.Content.ReadAsByteArrayAsync(_ct);
@@ -173,40 +179,93 @@ public sealed class BackupApiTests(BackupServer server) : IClassFixture<BackupSe
         Assert.Equal(done.ArchiveSize, bytes.LongLength);
 
         Assert.Contains(await ListAsync(), r => r.Id == run.Id);
-        await AssertErrorAsync(await _admin.PostAsync($"{Backups}/{run.Id}/cancel", null, _ct), HttpStatusCode.Conflict, BackupErrors.Codes.NotActive);
-        await AssertErrorAsync(await _admin.GetAsync($"{Backups}/{Guid.CreateVersion7()}", _ct), HttpStatusCode.NotFound, BackupErrors.Codes.NotFound);
-        await AssertErrorAsync(await _admin.GetAsync($"{Backups}/{Guid.CreateVersion7()}/archive", _ct), HttpStatusCode.NotFound, BackupErrors.Codes.NotFound);
+        await AssertErrorAsync(await _backup.PostAsync($"{Backups}/{run.Id}/cancel", null, _ct), HttpStatusCode.Conflict, BackupErrors.Codes.NotActive);
+        await AssertErrorAsync(await _backup.GetAsync($"{Backups}/{Guid.CreateVersion7()}", _ct), HttpStatusCode.NotFound, BackupErrors.Codes.NotFound);
+        await AssertErrorAsync(await _backup.GetAsync($"{Backups}/{Guid.CreateVersion7()}/archive", _ct), HttpStatusCode.NotFound, BackupErrors.Codes.NotFound);
     }
 
     [Fact]
     public async Task Start_WithBadInput_IsRefused()
     {
-        await AssertErrorAsync(await _admin.PostAsJsonAsync(Backups, new StartBackupRequest(Compression: "gzip"), Json, _ct),
+        await AssertErrorAsync(await _backup.PostAsJsonAsync(Backups, new StartBackupRequest(Compression: "gzip"), Json, _ct),
             HttpStatusCode.BadRequest, BackupErrors.Codes.InvalidCompression);
-        await AssertErrorAsync(await _admin.PostAsJsonAsync(Backups, new StartBackupRequest(Target: "stream"), Json, _ct),
+        await AssertErrorAsync(await _backup.PostAsJsonAsync(Backups, new StartBackupRequest(Target: "stream"), Json, _ct),
             HttpStatusCode.BadRequest, BackupErrors.Codes.InvalidTarget);
-        await AssertErrorAsync(await _admin.GetAsync($"{Backups}/stream?compression=gzip", _ct),
+        await AssertErrorAsync(await _backup.GetAsync($"{Backups}/stream?compression=gzip", _ct),
             HttpStatusCode.BadRequest, BackupErrors.Codes.InvalidCompression);
     }
 
     [Fact]
-    public async Task Viewer_CannotListStartOrStream()
+    public async Task BackupApi_TakesSignedRequests_FromAdminAndBackupKeysOnly()
     {
-        var created = await _admin.PostAsJsonAsync("/api/v1/access-keys", new CreateAccessKeyRequest("viewer", "viewer"), Json, _ct);
-        var key = (await created.Content.ReadFromJsonAsync<CreatedAccessKeyResponse>(Json, _ct))!;
-        using var viewer = await server.AdminClientAsync(key.AccessKeyId, key.SecretKey);
+        var viewer = await CreateAccessKeyAsync("viewer", AccessKeyRoles.Viewer);
+        var backup = await CreateAccessKeyAsync("backup job", AccessKeyRoles.Backup);
 
-        await AssertErrorAsync(await viewer.GetAsync(Backups, _ct), HttpStatusCode.Forbidden, "AUTH_FORBIDDEN");
-        await AssertErrorAsync(await viewer.GetAsync($"{Backups}/stream", _ct), HttpStatusCode.Forbidden, "AUTH_FORBIDDEN");
-        await AssertErrorAsync(await viewer.PostAsJsonAsync(Backups, new StartBackupRequest(), Json, _ct), HttpStatusCode.Forbidden, "AUTH_FORBIDDEN");
-        await AssertErrorAsync(await server.AnonymousAdminClient().GetAsync(Backups, _ct), HttpStatusCode.Unauthorized, "AUTH_UNAUTHENTICATED");
+        // A sign-in cookie, even an admin's, and an unsigned request are refused: the API is for programs.
+        await AssertErrorAsync(await _admin.GetAsync(Backups, _ct), HttpStatusCode.Unauthorized, AuthErrors.Codes.SignatureRequired);
+        await AssertErrorAsync(await _admin.PostAsJsonAsync(Backups, new StartBackupRequest(), Json, _ct),
+            HttpStatusCode.Unauthorized, AuthErrors.Codes.SignatureRequired);
+        await AssertErrorAsync(await server.AnonymousAdminClient().GetAsync($"{Backups}/stream", _ct),
+            HttpStatusCode.Unauthorized, AuthErrors.Codes.SignatureRequired);
+
+        // Signed by a viewer: the key is valid, the role is not.
+        using (var signedByViewer = server.BackupClient(viewer.AccessKeyId, viewer.SecretKey))
+            await AssertErrorAsync(await signedByViewer.GetAsync(Backups, _ct), HttpStatusCode.Forbidden, AuthErrors.Codes.Forbidden);
+
+        // A wrong secret: the signature does not match.
+        using (var wrongSecret = server.BackupClient(backup.AccessKeyId, "not-the-secret-key"))
+            await AssertErrorAsync(await wrongSecret.GetAsync(Backups, _ct), HttpStatusCode.Forbidden, S3AuthErrors.Codes.SignatureMismatch);
+
+        // A backup key lists and starts backups, never with the master key, and cannot sign in to the admin UI.
+        using var signedByBackup = server.BackupClient(backup.AccessKeyId, backup.SecretKey);
+        Assert.Equal(HttpStatusCode.OK, (await signedByBackup.GetAsync(Backups, _ct)).StatusCode);
+        await AssertErrorAsync(await signedByBackup.PostAsJsonAsync(Backups, new StartBackupRequest(IncludeMasterKey: true), Json, _ct),
+            HttpStatusCode.Forbidden, BackupErrors.Codes.MasterKeyForbidden);
+        await AssertErrorAsync(await signedByBackup.GetAsync($"{Backups}/stream?includeMasterKey=true", _ct),
+            HttpStatusCode.Forbidden, BackupErrors.Codes.MasterKeyForbidden);
+        var started = await signedByBackup.PostAsJsonAsync(Backups, new StartBackupRequest(), Json, _ct);
+        Assert.Equal(HttpStatusCode.Accepted, started.StatusCode);
+        var run = (await started.Content.ReadFromJsonAsync<BackupRunResponse>(Json, _ct))!;
+        Assert.Equal(backup.AccessKeyId, run.StartedBy);
+        Assert.Equal(BackupRunStatuses.Succeeded, (await WaitForAsync(run.Id)).Status);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => server.AdminClientAsync(backup.AccessKeyId, backup.SecretKey));
+
+        // A signed key reaches the backup API only: elsewhere it needs a session it cannot have.
+        await AssertErrorAsync(await signedByBackup.GetAsync("/api/v1/buckets", _ct), HttpStatusCode.Unauthorized, AuthErrors.Codes.Unauthenticated);
+    }
+
+    [Fact]
+    public async Task BackupApi_RefusesABodyThatDoesNotMatchItsSignedHash()
+    {
+        var signer = new SigV4SigningHandler(TimeStoreServer.AccessKey, TimeStoreServer.SecretKey, TimeStoreServer.Region,
+            inner: new TamperingHandler());
+        using var raw = new HttpClient(signer) { BaseAddress = new Uri(server.AdminUrl) };
+
+        var response = await raw.PostAsJsonAsync(Backups, new StartBackupRequest(Compression: "none"), Json, _ct);
+
+        await AssertErrorAsync(response, HttpStatusCode.BadRequest, AuthErrors.Codes.PayloadMismatch);
+    }
+
+    /// <summary>Changes the body after the signing handler hashed and signed it (asks for the master key instead).</summary>
+    private sealed class TamperingHandler() : DelegatingHandler(new HttpClientHandler())
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var headers = request.Content!.Headers.ToArray();
+            request.Content = new StringContent("{\"includeMasterKey\":true}");
+            request.Content.Headers.Clear();
+            foreach (var header in headers)
+                request.Content.Headers.TryAddWithoutValidation(header.Key, header.Value);
+            request.Content.Headers.ContentLength = null;
+            return base.SendAsync(request, cancellationToken);
+        }
     }
 
     // --- Helpers ---------------------------------------------------------------------------------------------------
 
     private async Task<(string Path, HttpResponseMessage Response)> StreamAsync(string query)
     {
-        var response = await _admin.GetAsync($"{Backups}/stream{query}", HttpCompletionOption.ResponseHeadersRead, _ct);
+        var response = await _backup.GetAsync($"{Backups}/stream{query}", HttpCompletionOption.ResponseHeadersRead, _ct);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var path = Path.Combine(_scratch, response.Content.Headers.ContentDisposition!.FileName!.Trim('"'));
         await using (var file = File.Create(path))
@@ -219,18 +278,18 @@ public sealed class BackupApiTests(BackupServer server) : IClassFixture<BackupSe
         BackupRunResponse? run = null;
         await TimeStoreServer.WaitUntilAsync(() =>
         {
-            run = _admin.GetFromJsonAsync<BackupRunResponse>($"{Backups}/{runId}", Json, _ct).GetAwaiter().GetResult();
+            run = _backup.GetFromJsonAsync<BackupRunResponse>($"{Backups}/{runId}", Json, _ct).GetAwaiter().GetResult();
             return run!.Status is not (BackupRunStatuses.Queued or BackupRunStatuses.Running);
         }, _ct);
         return run!;
     }
 
     private async Task<IReadOnlyList<BackupRunResponse>> ListAsync() =>
-        (await _admin.GetFromJsonAsync<List<BackupRunResponse>>(Backups, Json, _ct))!;
+        (await _backup.GetFromJsonAsync<List<BackupRunResponse>>(Backups, Json, _ct))!;
 
-    private async Task<CreatedAccessKeyResponse> CreateAccessKeyAsync()
+    private async Task<CreatedAccessKeyResponse> CreateAccessKeyAsync(string description = "backup", string? role = null)
     {
-        var response = await _admin.PostAsJsonAsync("/api/v1/access-keys", new CreateAccessKeyRequest("backup"), Json, _ct);
+        var response = await _admin.PostAsJsonAsync("/api/v1/access-keys", new CreateAccessKeyRequest(description, role), Json, _ct);
         return (await response.Content.ReadFromJsonAsync<CreatedAccessKeyResponse>(Json, _ct))!;
     }
 
@@ -300,7 +359,7 @@ public sealed class BackupFailureTests(BackupServer server) : IClassFixture<Back
         var blob = Directory.EnumerateFiles(Path.Combine(server.DataPath, "blobs"), "*", SearchOption.AllDirectories).Single();
         await File.WriteAllTextAsync(blob, "ORIGINAL", _ct); // same size, other bytes: only the checksum tells
 
-        using var admin = await server.AdminClientAsync();
+        using var admin = server.BackupClient();
         var started = await admin.PostAsJsonAsync(Backups, new StartBackupRequest(), Json, _ct);
         var run = (await started.Content.ReadFromJsonAsync<BackupRunResponse>(Json, _ct))!;
         BackupRunResponse? done = null;

@@ -1,7 +1,8 @@
 namespace TimeStore.Contracts.AccessKeys;
 
 /// <param name="Description">Optional label (who or what uses the key).</param>
-/// <param name="Role">Admin API role: <c>none</c> (default, S3 only), <c>viewer</c> or <c>admin</c>.</param>
+/// <param name="Role">Admin API role: <c>none</c> (default, S3 only), <c>viewer</c>, <c>admin</c> or <c>backup</c>
+/// (the backup API with signed requests only).</param>
 /// <param name="S3Scope"><c>full</c> (default: S3 allowed unless a bucket policy denies) or <c>policy</c> (only what bucket policies allow).</param>
 public sealed record CreateAccessKeyRequest(string? Description, string? Role = null, string? S3Scope = null);
 
@@ -12,7 +13,7 @@ public sealed record AccessKeyResponse(
 /// <param name="S3Scope"><c>full</c> or <c>policy</c>.</param>
 public sealed record SetAccessKeyScopeRequest(string S3Scope);
 
-/// <param name="Role"><c>none</c>, <c>viewer</c> or <c>admin</c>.</param>
+/// <param name="Role"><c>none</c>, <c>viewer</c>, <c>admin</c> or <c>backup</c>.</param>
 public sealed record SetAccessKeyRoleRequest(string Role);
 
 /// <summary>

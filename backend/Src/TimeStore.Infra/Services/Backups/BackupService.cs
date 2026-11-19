@@ -20,8 +20,10 @@ public sealed class BackupService(
     TimeProvider clock)
     : IBackupService
 {
-    public async ValueTask<Result<BackupRunResponse>> StartAsync(StartBackupRequest request, string startedBy, CancellationToken ct)
+    public async ValueTask<Result<BackupRunResponse>> StartAsync(StartBackupRequest request, BackupCaller caller, CancellationToken ct)
     {
+        if (request.IncludeMasterKey && !caller.MayIncludeMasterKey)
+            return BackupErrors.MasterKeyForbidden;
         var target = request.Target ?? BackupTargetTypes.Directory;
         if (target == BackupTargetTypes.Stream)
             return BackupErrors.InvalidTarget(target); // a stream is started by downloading it (GET /backups/stream)
@@ -31,7 +33,7 @@ public sealed class BackupService(
         if (compression.IsFailure)
             return compression.Error;
 
-        var run = BackupRun.Queue(BackupTriggers.Manual, target, compression.Value, request.IncludeMasterKey, startedBy, clock.UtcNowMs);
+        var run = BackupRun.Queue(BackupTriggers.Manual, target, compression.Value, request.IncludeMasterKey, caller.AccessKeyId, clock.UtcNowMs);
         if (!await runs.TryCreateBackupRunAsync(run, ct))
             return BackupErrors.Active;
 
@@ -40,13 +42,15 @@ public sealed class BackupService(
     }
 
     public async ValueTask<(Result<BackupRunResponse> Result, Exception? Exception)> StreamAsync(
-        string? compression, bool includeMasterKey, string startedBy, IBackupTarget target, CancellationToken ct)
+        string? compression, bool includeMasterKey, BackupCaller caller, IBackupTarget target, CancellationToken ct)
     {
+        if (includeMasterKey && !caller.MayIncludeMasterKey)
+            return (BackupErrors.MasterKeyForbidden, null);
         var chosen = BackupValidation.Compression(compression, options);
         if (chosen.IsFailure)
             return (chosen.Error, null);
 
-        var run = BackupRun.Queue(BackupTriggers.Api, BackupTargetTypes.Stream, chosen.Value, includeMasterKey, startedBy, clock.UtcNowMs);
+        var run = BackupRun.Queue(BackupTriggers.Api, BackupTargetTypes.Stream, chosen.Value, includeMasterKey, caller.AccessKeyId, clock.UtcNowMs);
         if (!await runs.TryCreateBackupRunAsync(run, ct))
             return (BackupErrors.Active, null);
 

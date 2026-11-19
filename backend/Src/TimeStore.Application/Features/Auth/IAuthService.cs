@@ -38,6 +38,13 @@ public interface IAuthService
     /// <summary>The principal of a session token, or null (unknown, expired, key disabled or demoted).</summary>
     ValueTask<AdminPrincipal?> AuthenticateAsync(string token, CancellationToken ct);
 
+    /// <summary>
+    /// The principal of an access key whose SigV4 signature the caller has verified (the backup API, called by
+    /// programs), or null when the key is disabled or unknown. Valid for that one request
+    /// (<see cref="AdminPrincipal.ExpiresAt"/> is now); the caller checks the role.
+    /// </summary>
+    ValueTask<AdminPrincipal?> AuthenticateSignedAsync(string accessKeyId, CancellationToken ct);
+
     /// <summary>Ends the session (no error when it is already gone).</summary>
     ValueTask LogoutAsync(string token, CancellationToken ct);
 

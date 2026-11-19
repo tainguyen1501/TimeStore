@@ -13,12 +13,16 @@ using TimeStore.Server.Workers;
 namespace TimeStore.Server.Admin;
 
 /// <summary>
-/// <c>/api/v1/backups</c> (docs/api/admin.md "Backups"). Admins only, reads included: an archive is the whole server
-/// (and possibly its master key), so a viewer may not list, download or stream one.
+/// <c>/api/v1/backups</c> (docs/api/admin.md "Backups"): an API for programs, not for the admin UI. Requests are signed
+/// with SigV4 by a key with the <c>admin</c> or <c>backup</c> role (<see cref="AdminAuthentication"/>; sign-in
+/// cookies are refused), reads included: an archive is the whole server. Only admin keys may include the master key.
 /// </summary>
 internal static class AdminBackupApi
 {
     private const string Backups = "/backups";
+
+    /// <summary>Every backup route starts here (the authentication middleware selects SigV4 by it).</summary>
+    public const string RoutePrefix = AdminRoutes.Prefix + Backups;
     private const string ById = "/{id:guid}";
     private const string Cancel = "/{id:guid}/cancel";
     private const string Archive = "/{id:guid}/archive";
@@ -32,7 +36,7 @@ internal static class AdminBackupApi
     {
         var backups = app.MapGroup(AdminRoutes.Prefix + Backups)
             .AddEndpointFilter(async (context, next) =>
-                context.HttpContext.Principal().Role == AccessKeyRoles.Admin
+                AccessKeyRoles.CanBackUp(context.HttpContext.Principal().Role)
                     ? await next(context)
                     : ApiResults.Error(AuthErrors.Forbidden, context.HttpContext));
 
@@ -51,7 +55,7 @@ internal static class AdminBackupApi
     private static async Task<Results<Accepted<BackupRunResponse>, JsonHttpResult<ErrorResponse>>> StartAsync(
         StartBackupRequest request, IBackupService service, HttpContext http, CancellationToken ct)
     {
-        var result = await service.StartAsync(request, http.Principal().AccessKeyId, ct);
+        var result = await service.StartAsync(request, CallerOf(http), ct);
         return result.IsSuccess
             ? TypedResults.Accepted($"{AdminRoutes.Prefix}{Backups}/{result.Value.Id}", result.Value)
             : ApiResults.Error(result.Error, http);
@@ -97,7 +101,7 @@ internal static class AdminBackupApi
     {
         var principal = http.Principal();
         var target = new HttpBackupTarget(http.Response);
-        var (result, exception) = await service.StreamAsync(compression, includeMasterKey, principal.AccessKeyId, target, http.RequestAborted);
+        var (result, exception) = await service.StreamAsync(compression, includeMasterKey, CallerOf(http), target, http.RequestAborted);
         if (result.IsSuccess)
         {
             BackupLog.Streamed(logger, result.Value.Id, result.Value.ArchiveName, principal.AccessKeyId, result.Value.ArchiveSize ?? 0);
@@ -115,6 +119,12 @@ internal static class AdminBackupApi
 
         http.Abort();
         return TypedResults.Empty;
+    }
+
+    private static BackupCaller CallerOf(HttpContext http)
+    {
+        var principal = http.Principal();
+        return new BackupCaller(principal.AccessKeyId, MayIncludeMasterKey: principal.Role == AccessKeyRoles.Admin);
     }
 
     private static string ContentTypeOf(string compression) =>

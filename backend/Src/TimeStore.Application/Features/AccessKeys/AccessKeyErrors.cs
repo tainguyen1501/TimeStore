@@ -21,7 +21,7 @@ public static class AccessKeyErrors
         Codes.InvalidScope, $"The S3 scope must be {AccessKeyScopes.Full} or {AccessKeyScopes.Policy}.");
 
     public static readonly AppError InvalidRole = AppError.Validation(
-        Codes.InvalidRole, $"The role must be {AccessKeyRoles.None}, {AccessKeyRoles.Viewer} or {AccessKeyRoles.Admin}.");
+        Codes.InvalidRole, $"The role must be {AccessKeyRoles.None}, {AccessKeyRoles.Viewer}, {AccessKeyRoles.Admin} or {AccessKeyRoles.Backup}.");
 
     // The id is echoed: it is not a secret (it travels in every request's Authorization header).
     public static AppError NotFound(string accessKeyId) =>

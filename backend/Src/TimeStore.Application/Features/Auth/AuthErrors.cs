@@ -11,6 +11,8 @@ public static class AuthErrors
         public const string Unauthenticated = "AUTH_UNAUTHENTICATED";
         public const string Forbidden = "AUTH_FORBIDDEN";
         public const string CrossSite = "AUTH_CROSS_SITE";
+        public const string SignatureRequired = "AUTH_SIGNATURE_REQUIRED";
+        public const string PayloadMismatch = "AUTH_PAYLOAD_MISMATCH";
     }
 
     /// <summary>One answer for every failure, so a caller cannot tell which keys exist or which are admins.</summary>
@@ -25,6 +27,13 @@ public static class AuthErrors
 
     public static readonly AppError CrossSite = AppError.Forbidden(
         Codes.CrossSite, "State-changing requests must come from the same origin.");
+
+    public static readonly AppError SignatureRequired = AppError.Unauthorized(Codes.SignatureRequired,
+        "This API is for programs: sign each request with AWS Signature Version 4 (an access key with the admin or "
+        + "backup role). Sign-in cookies are not accepted.");
+
+    public static readonly AppError PayloadMismatch = AppError.Validation(Codes.PayloadMismatch,
+        "The request body does not match x-amz-content-sha256, is too large, or uses a streaming payload this API does not take.");
 
     public static AppError TooManyAttempts(TimeSpan retryAfter) => AppError.TooManyRequests(
         Codes.TooManyAttempts, $"Too many failed sign-ins. Try again in {Math.Ceiling(retryAfter.TotalSeconds)} seconds.");

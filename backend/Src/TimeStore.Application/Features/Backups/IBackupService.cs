@@ -11,7 +11,7 @@ namespace TimeStore.Application.Features.Backups;
 public interface IBackupService
 {
     /// <summary>Queues a backup to a stored target; <c>BACKUP_ACTIVE</c> when one is already queued or running.</summary>
-    ValueTask<Result<BackupRunResponse>> StartAsync(StartBackupRequest request, string startedBy, CancellationToken ct);
+    ValueTask<Result<BackupRunResponse>> StartAsync(StartBackupRequest request, BackupCaller caller, CancellationToken ct);
 
     /// <summary>
     /// Runs a backup now, written to <paramref name="target"/> (the HTTP response). Errors before the first byte come
@@ -20,7 +20,7 @@ public interface IBackupService
     /// comes along for the log.
     /// </summary>
     ValueTask<(Result<BackupRunResponse> Result, Exception? Exception)> StreamAsync(
-        string? compression, bool includeMasterKey, string startedBy, IBackupTarget target, CancellationToken ct);
+        string? compression, bool includeMasterKey, BackupCaller caller, IBackupTarget target, CancellationToken ct);
 
     /// <summary>The newest runs first.</summary>
     ValueTask<IReadOnlyList<BackupRunResponse>> ListAsync(CancellationToken ct);
@@ -35,6 +35,10 @@ public interface IBackupService
 }
 
 public sealed record BackupArchiveDownload(string Name, string Compression, Stream Content);
+
+/// <summary>Who starts a backup.</summary>
+/// <param name="MayIncludeMasterKey">Only admin keys may put the master key in an archive (backup keys may not).</param>
+public sealed record BackupCaller(string AccessKeyId, bool MayIncludeMasterKey);
 
 /// <summary>Executes runs (the engine): claim, hold, snapshot, archive, finish. Used by the worker and the service.</summary>
 public interface IBackupRunner

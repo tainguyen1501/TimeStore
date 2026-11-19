@@ -5,7 +5,8 @@ Bound to `127.0.0.1` by default (`TimeStore:AdminAddress`). JSON (camelCase). Er
 
 ## Sign-in
 
-Every `/api/v1` endpoint except `auth/login` needs a session; health endpoints are open.
+Every `/api/v1` endpoint except `auth/login` needs a session; health endpoints are open. The backup API
+(`/api/v1/backups`) is the exception: signed requests only (see "Backups").
 
 | Method | Path | Body | Success | Errors |
 |---|---|---|---|---|
@@ -165,17 +166,29 @@ that carries a secret; it cannot be read again (stored encrypted). A disabled or
 
 ## Backups
 
-Admins only, reads included (a viewer gets 403 `AUTH_FORBIDDEN`: an archive is the whole server). Design:
+An API for **programs**, not for the admin UI. Every request is signed with AWS Signature Version 4 in the
+`Authorization` header, exactly like an S3 request (`curl --aws-sigv4 "aws:amz:<region>:s3"`, the AWS SDKs), by an
+access key with the `backup` or `admin` role; reads included, since an archive is the whole server. Design:
 `docs/research/backup.md`; operators: `docs/backup.md`.
+
+- No signature (a sign-in cookie, an unsigned request): 401 `AUTH_SIGNATURE_REQUIRED`. Cookies are never accepted
+  here, so a browser cannot run backups; there is no CSRF check (nothing to forge without the secret key).
+- A bad signature, an unknown or disabled key, a request too old: 403 with the S3 authentication codes
+  (`S3_AUTH_SIGNATURE_MISMATCH`, `S3_AUTH_INVALID_ACCESS_KEY`, `S3_AUTH_TIME_SKEWED`, …).
+- A key whose role is `none` or `viewer`: 403 `AUTH_FORBIDDEN`.
+- The body (the start request's JSON) must match `x-amz-content-sha256`, or be sent as `UNSIGNED-PAYLOAD`;
+  `aws-chunked` bodies and bodies over 64 KiB are refused: 400 `AUTH_PAYLOAD_MISMATCH`.
+- `includeMasterKey: true` needs an `admin` key; a `backup` key gets 403 `BACKUP_MASTER_KEY_FORBIDDEN`.
+- A `backup` key reaches nothing else: it cannot sign in, and the rest of `/api/v1` needs a session.
 
 | Method | Path | Body | Success | Errors |
 |---|---|---|---|---|
-| POST | `/api/v1/backups` | `{ "target"?: "directory", "compression"?: "zstd" \| "none", "includeMasterKey"?: false }` | `202 BackupRunResponse` (queued), `Location` | 400 `BACKUP_INVALID_TARGET`, `BACKUP_INVALID_COMPRESSION`, `BACKUP_TARGET_NOT_CONFIGURED`; 409 `BACKUP_ACTIVE` |
+| POST | `/api/v1/backups` | `{ "target"?: "directory", "compression"?: "zstd" \| "none", "includeMasterKey"?: false }` | `202 BackupRunResponse` (queued), `Location` | 400 `BACKUP_INVALID_TARGET`, `BACKUP_INVALID_COMPRESSION`, `BACKUP_TARGET_NOT_CONFIGURED`; 403 `BACKUP_MASTER_KEY_FORBIDDEN`; 409 `BACKUP_ACTIVE` |
 | GET | `/api/v1/backups` | — | `200 BackupRunResponse[]` (newest first, at most 100) | — |
 | GET | `/api/v1/backups/{id}` | — | `200 BackupRunResponse` | 404 `BACKUP_NOT_FOUND` |
 | POST | `/api/v1/backups/{id}/cancel` | — | `200 BackupRunResponse` (queued: cancelled at once; running: stops at its next blob, poll for the end) | 404, 409 `BACKUP_NOT_ACTIVE` |
 | GET | `/api/v1/backups/{id}/archive` | — | `200` the archive (`application/zstd` or `application/x-tar`, `Content-Disposition: attachment`, `no-store`) | 404 `BACKUP_NOT_FOUND`, `BACKUP_ARCHIVE_NOT_FOUND` |
-| GET | `/api/v1/backups/stream?compression=&includeMasterKey=` | — | `200` the archive, written while the backup runs; nothing is kept on the server | 400 `BACKUP_INVALID_COMPRESSION`, 409 `BACKUP_ACTIVE` |
+| GET | `/api/v1/backups/stream?compression=&includeMasterKey=` | — | `200` the archive, written while the backup runs; nothing is kept on the server | 400 `BACKUP_INVALID_COMPRESSION`, 403 `BACKUP_MASTER_KEY_FORBIDDEN`, 409 `BACKUP_ACTIVE` |
 
 `BackupRunResponse`: `{ "id", "status", "trigger", "target", "compression", "includeMasterKey", "startedBy",
 "queuedAt", "startedAt"?, "finishedAt"?, "snapshotAt"?, "blobsTotal", "blobsDone", "bytesTotal", "bytesDone",

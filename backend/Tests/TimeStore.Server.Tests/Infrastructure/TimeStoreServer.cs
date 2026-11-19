@@ -91,6 +91,13 @@ public class TimeStoreServer : IAsyncLifetime
         return client;
     }
 
+    /// <summary>
+    /// A client for the backup API: every request signed with SigV4 by the given key (the root key by default), no
+    /// cookie, no <c>Origin</c>: the way a program (curl --aws-sigv4, an SDK) calls it.
+    /// </summary>
+    public HttpClient BackupClient(string accessKey = AccessKey, string secretKey = SecretKey) =>
+        new(new SigV4SigningHandler(accessKey, secretKey, Region)) { BaseAddress = new Uri(AdminUrl) };
+
     /// <summary>An admin API client that is not signed in (same origin, own cookie jar).</summary>
     public HttpClient AnonymousAdminClient()
     {

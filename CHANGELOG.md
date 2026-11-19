@@ -56,7 +56,9 @@ The first public release, 0.1.0. A single-node, S3-compatible object storage ser
 - Built-in backups of a running server: one consistent archive at an instant (tar + Zstandard or plain tar, every
   blob checked against its MD5, a manifest and a `blobs.sha256` list), streamed from `GET /api/v1/backups/stream` or
   written to `Backup:Path` by a background worker; runs with history, progress and cancel; `TimeStore.Server restore`
-  checks every entry and restores into an empty data directory. The master key is only included when asked for.
+  checks every entry and restores into an empty data directory. The master key is only included when an admin key asks
+  for it. The backup API takes requests signed with SigV4 (like S3, `curl --aws-sigv4`) by a key with the new
+  **`backup`** role (backup API only, no admin UI) or an admin key; sign-in cookies are refused.
 - Backup and restore guide: `docs/backup.md`.
 - Helm chart for Kubernetes (`deploy/helm/timestore`, published as `oci://ghcr.io/tainguyen1501/charts/timestore`),
   with a backups claim (`backup.existingClaim`) and restore steps (a Job, in place or side by side).

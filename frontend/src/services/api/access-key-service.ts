@@ -6,7 +6,7 @@ export type CreateAccessKeyRequest = components["schemas"]["CreateAccessKeyReque
 export type CreatedAccessKeyResponse = components["schemas"]["CreatedAccessKeyResponse"]
 
 /** Roles of an access key (TimeStore.Domain AccessKeyRoles). The API sends them as strings. */
-export const ACCESS_KEY_ROLES = ["none", "viewer", "admin"] as const
+export const ACCESS_KEY_ROLES = ["none", "viewer", "admin", "backup"] as const
 export type AccessKeyRole = (typeof ACCESS_KEY_ROLES)[number]
 
 /** What each role allows, shown where a role is picked. */
@@ -14,6 +14,11 @@ export const ROLE_INFO: Record<AccessKeyRole, { label: string; description: stri
   none: { label: "S3 only", description: "S3 API only; cannot sign in to the admin UI." },
   viewer: { label: "Viewer", description: "S3 API, plus the admin UI read-only." },
   admin: { label: "Admin", description: "S3 API, plus the admin UI with every action." },
+  backup: {
+    label: "Backup",
+    description:
+      "For backup programs: the backup API with signed requests (curl --aws-sigv4, AWS SDKs); no admin UI, never the master key.",
+  },
 }
 
 /** S3 scopes of an access key (TimeStore.Domain AccessKeyScopes). */

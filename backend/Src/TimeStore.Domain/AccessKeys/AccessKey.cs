@@ -52,9 +52,18 @@ public static class AccessKeyRoles
     /// <summary>Admin API, everything.</summary>
     public const string Admin = "admin";
 
-    public static bool IsValid(string? role) => role is None or Viewer or Admin;
+    /// <summary>
+    /// The backup API only (<c>/api/v1/backups</c>, requests signed with SigV4), for the programs that run backups;
+    /// never the admin UI, never archives with the master key.
+    /// </summary>
+    public const string Backup = "backup";
+
+    public static bool IsValid(string? role) => role is None or Viewer or Admin or Backup;
 
     public static bool CanSignIn(string role) => role is Viewer or Admin;
+
+    /// <summary>Who may call the backup API.</summary>
+    public static bool CanBackUp(string role) => role is Admin or Backup;
 }
 
 /// <summary>A signed-in admin API session. Only the SHA-256 of the session token is stored.</summary>

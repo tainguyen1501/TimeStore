@@ -80,6 +80,9 @@ public sealed class AuthService(
             await store.DeleteSessionAsync(hash, ct);
     }
 
+    public async ValueTask<AdminPrincipal?> AuthenticateSignedAsync(string accessKeyId, CancellationToken ct) =>
+        await RoleOfAsync(accessKeyId, ct) is { } role ? new AdminPrincipal(accessKeyId, role, clock.GetUtcNow().UtcDateTime) : null;
+
     public ValueTask<int> PurgeExpiredAsync(CancellationToken ct) =>
         store.DeleteExpiredSessionsAsync(clock.GetUtcNow().UtcDateTime, ct);
 
