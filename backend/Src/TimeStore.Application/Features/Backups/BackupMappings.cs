@@ -8,7 +8,7 @@ public static class BackupMappings
     extension(BackupRun run)
     {
         public BackupRunResponse ToResponse() => new(
-            run.Id, StatusOf(run.Status), run.Trigger, run.TargetType, run.Compression, run.IncludeMasterKey, run.StartedBy,
+            run.Id, StatusOf(run.Status), run.Trigger, run.TargetType, run.Compression, run.StartedBy,
             run.QueuedAt, run.StartedAt, run.FinishedAt, run.SnapshotAt, run.Progress.BlobsTotal, run.Progress.BlobsDone,
             run.Progress.BytesTotal, run.Progress.BytesDone, run.ArchiveName, run.ArchiveSize, run.ArchiveSha256,
             run.ErrorCode, run.ErrorMessage);

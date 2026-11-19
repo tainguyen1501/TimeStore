@@ -1,7 +1,8 @@
 # TimeStore server as a Native AOT binary on Linux.
 #   docker build -f deploy/Dockerfile -t timestore .
 #   docker run -p 9000:9000 -p 9001:9001 -v timestore-data:/data \
-#     -e TimeStore__S3__RootAccessKey=... -e TimeStore__S3__RootSecretKey=... timestore
+#     -e TimeStore__S3__RootAccessKey=... -e TimeStore__S3__RootSecretKey=... \
+#     -e TimeStore__MasterKey="$(openssl rand -base64 32)" timestore   # keep the key: it decrypts the access keys
 # The admin port (UI + API) binds to 0.0.0.0 inside the container (publish it only where you want it); the server logs a warning
 # until a TLS proxy and TimeStore__Admin__SecureCookies=true are in front of it.
 

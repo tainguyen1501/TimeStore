@@ -178,19 +178,18 @@ access key with the `backup` or `admin` role; reads included, since an archive i
 - A key whose role is `none` or `viewer`: 403 `AUTH_FORBIDDEN`.
 - The body (the start request's JSON) must match `x-amz-content-sha256`, or be sent as `UNSIGNED-PAYLOAD`;
   `aws-chunked` bodies and bodies over 64 KiB are refused: 400 `AUTH_PAYLOAD_MISMATCH`.
-- `includeMasterKey: true` needs an `admin` key; a `backup` key gets 403 `BACKUP_MASTER_KEY_FORBIDDEN`.
 - A `backup` key reaches nothing else: it cannot sign in, and the rest of `/api/v1` needs a session.
 
 | Method | Path | Body | Success | Errors |
 |---|---|---|---|---|
-| POST | `/api/v1/backups` | `{ "target"?: "directory", "compression"?: "zstd" \| "none", "includeMasterKey"?: false }` | `202 BackupRunResponse` (queued), `Location` | 400 `BACKUP_INVALID_TARGET`, `BACKUP_INVALID_COMPRESSION`, `BACKUP_TARGET_NOT_CONFIGURED`; 403 `BACKUP_MASTER_KEY_FORBIDDEN`; 409 `BACKUP_ACTIVE` |
+| POST | `/api/v1/backups` | `{ "target"?: "directory", "compression"?: "zstd" \| "none" }` | `202 BackupRunResponse` (queued), `Location` | 400 `BACKUP_INVALID_TARGET`, `BACKUP_INVALID_COMPRESSION`, `BACKUP_TARGET_NOT_CONFIGURED`; 409 `BACKUP_ACTIVE` |
 | GET | `/api/v1/backups` | — | `200 BackupRunResponse[]` (newest first, at most 100) | — |
 | GET | `/api/v1/backups/{id}` | — | `200 BackupRunResponse` | 404 `BACKUP_NOT_FOUND` |
 | POST | `/api/v1/backups/{id}/cancel` | — | `200 BackupRunResponse` (queued: cancelled at once; running: stops at its next blob, poll for the end) | 404, 409 `BACKUP_NOT_ACTIVE` |
 | GET | `/api/v1/backups/{id}/archive` | — | `200` the archive (`application/zstd` or `application/x-tar`, `Content-Disposition: attachment`, `no-store`) | 404 `BACKUP_NOT_FOUND`, `BACKUP_ARCHIVE_NOT_FOUND` |
-| GET | `/api/v1/backups/stream?compression=&includeMasterKey=` | — | `200` the archive, written while the backup runs; nothing is kept on the server | 400 `BACKUP_INVALID_COMPRESSION`, 403 `BACKUP_MASTER_KEY_FORBIDDEN`, 409 `BACKUP_ACTIVE` |
+| GET | `/api/v1/backups/stream?compression=` | — | `200` the archive, written while the backup runs; nothing is kept on the server | 400 `BACKUP_INVALID_COMPRESSION`, 409 `BACKUP_ACTIVE` |
 
-`BackupRunResponse`: `{ "id", "status", "trigger", "target", "compression", "includeMasterKey", "startedBy",
+`BackupRunResponse`: `{ "id", "status", "trigger", "target", "compression", "startedBy",
 "queuedAt", "startedAt"?, "finishedAt"?, "snapshotAt"?, "blobsTotal", "blobsDone", "bytesTotal", "bytesDone",
 "archiveName"?, "archiveSize"?, "archiveSha256"?, "errorCode"?, "errorMessage"? }`.
 
@@ -209,7 +208,8 @@ access key with the `backup` or `admin` role; reads included, since an archive i
 
 The `restore` command (offline, `docs/backup.md`) reports `BACKUP_RESTORE_NOT_EMPTY`, `BACKUP_RESTORE_INVALID_ARCHIVE`,
 `BACKUP_RESTORE_UNSUPPORTED` (newer archive format or schema), `BACKUP_RESTORE_CHECKSUM_MISMATCH` and
-`BACKUP_RESTORE_MASTER_KEY_EXISTS`.
+`BACKUP_RESTORE_ARCHIVE_UNAVAILABLE` (a missing file, a URL that does not answer 2xx). Archives never hold the master
+key: the restored server uses the key of its configuration.
 
 ## Maintenance
 

@@ -19,7 +19,7 @@ a key of their own.
    cannot read buckets over S3). Role: **Backup**.
 3. Copy the access key and the secret key now; the secret is never shown again.
 
-A backup key can only call the backup API: it cannot sign in here, and it never gets the master key into an archive.
+A backup key can only call the backup API: it cannot sign in here.
 It can still download every object inside an archive, so keep it where you keep other secrets. Use one key per
 program, so that you can disable just that one.
 
@@ -94,10 +94,10 @@ Open `http://127.0.0.1:19001` and sign in with the root key: the buckets and obj
 backup was taken. The restored server starts without sessions and without backup history. Stop it with Ctrl+C and
 delete the folder when you are done.
 
-**Access keys after a restore:** their secrets are encrypted with the server's master key, which an archive does not
-hold (unless an admin key asked for it). Copy the original `master.key` into the restored folder before the first
-start and every key works; without it the server makes a new master key, the root key still works, and the other keys
-must be created again.
+**Access keys after a restore:** their secrets are encrypted with the server's master key, which is part of the
+server's settings and never in a backup. Start the restored server with the same master key and every key works;
+with another key the server does not start and says so. Keep a copy of the master key apart from your backups: without
+it the objects still come back, but the access keys other than the root key must be created again.
 
 To replace the data of the real server with a backup (after a lost disk, for example), stop it, restore into an empty
 data folder, and start it on that folder: `docs/backup.md`, "Restore an archive". `--archive` also takes an `http(s)`
@@ -124,5 +124,4 @@ Set by whoever runs the server (`appsettings.json`, or environment variables `Ti
 | `AUTH_FORBIDDEN` | The key's role is not Backup or Admin |
 | `BACKUP_TARGET_NOT_CONFIGURED` | The server has no backup folder: download instead, or set `Backup:Path` |
 | `BACKUP_ACTIVE` | A backup is already running; wait for it |
-| `BACKUP_MASTER_KEY_FORBIDDEN` | A backup key asked for the master key; only an admin key may |
 | `zsh: no matches found` | zsh read a comment as part of the command: paste without the `#` comments |

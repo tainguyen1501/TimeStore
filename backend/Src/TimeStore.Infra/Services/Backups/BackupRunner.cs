@@ -146,11 +146,10 @@ public sealed class BackupRunner(
         await using (var database = snapshot.OpenRead())
             metadataSha256 = Convert.ToHexStringLower(await SHA256.HashDataAsync(database, ct));
 
-        var masterKey = run.IncludeMasterKey ? await File.ReadAllBytesAsync(options.MasterKeyPath, ct) : null;
         var manifest = format.SerializeManifest(new BackupManifest(
             BackupLayout.FormatVersion, Version, options.NodeId, snapshotAt, summary.SchemaVersion, run.Compression,
             summary.Buckets, summary.Objects, summary.Versions, summary.Blobs, summary.Bytes, summary.DatabaseBytes,
-            metadataSha256, masterKey is not null));
+            metadataSha256, IncludesMasterKey: false));
 
         await using var checksums = OpenChecksumList(run.Id);
         await using var upload = await target.OpenWriteAsync(archiveName, ct);
@@ -181,13 +180,6 @@ public sealed class BackupRunner(
                 await runs.UpdateBackupProgressAsync(run.Id, snapshotAt, control.Progress, ct);
                 nextReport = clock.GetUtcNow() + BackupOptions.ProgressInterval;
             }
-        }
-
-        if (masterKey is not null)
-        {
-            var hashes = await writer.AddAsync(BackupLayout.MasterKeyEntry, new MemoryStream(masterKey, writable: false), masterKey.Length, ct);
-            CryptographicOperations.ZeroMemory(masterKey);
-            await AppendChecksumAsync(checksums, hashes.Sha256Hex, BackupLayout.MasterKeyEntry, ct);
         }
 
         await checksums.FlushAsync(ct);

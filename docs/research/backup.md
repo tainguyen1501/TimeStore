@@ -47,7 +47,7 @@ Entries:
 | `metadata.db` | The SQLite snapshot taken at T |
 | `blobs/<xy>/<id>` | Every blob the snapshot references, same layout as the data directory |
 | `blobs.sha256` (last) | One line per entry (`metadata.db`, every blob, `master.key`): SHA-256 and name in `sha256sum` format, so a restore, or `sha256sum -c` after `tar -xf`, verifies without the database |
-| `master.key` | Only when asked for (default: not included; section 9) |
+| `master.key` | Never since 2026-11-19 (section 17); archives of earlier versions may hold it |
 
 The layout mirrors the data directory, so a restore is mostly "unpack into an empty `DataPath`", and the archive opens
 with ordinary tools: `tar --zstd -xf timestore-node-1-20261118T020000Z.tar.zst`.
@@ -155,7 +155,7 @@ access-key secrets) and referenced by id.
 Restore runs with the server stopped, into an empty data directory:
 
 ```bash
-TimeStore.Server restore --archive timestore-node-1-20261118T020000Z.tar.zst --data-path /data [--master-key /secrets/master.key]
+TimeStore.Server restore --archive timestore-node-1-20261118T020000Z.tar.zst --data-path /data
 ```
 
 It detects the compression, checks the manifest (format, a TimeStore version not newer than the binary), the metadata
@@ -176,8 +176,8 @@ it once B1 lands (backup, then restore, then compare).
 - The backup API is for programs: requests signed with SigV4 by a key with the `backup` or `admin` role, never
   sign-in cookies (a browser cannot start a backup or carry an archive). A `backup` key reaches the backup API only.
   Every action is logged (who, what, archive name). (Decided 2026-11-19, replacing the B1 cookie sessions.)
-- The **master key is not included by default**: an archive alone cannot decrypt access-key secrets. A backup asks for
-  it explicitly; the manifest says whether it is in. Without it a restore needs the key kept apart (`docs/backup.md`).
+- The **master key is never in an archive** (since 2026-11-19, section 17): it is configuration, like the root key
+  pair, and an archive alone cannot decrypt access-key secrets.
 - Archives are not encrypted in B1–B4 (the target's own encryption applies); archive encryption is stage B6.
 - Target credentials are stored encrypted and never returned or logged.
 
@@ -240,7 +240,7 @@ and blob reader as interfaces, so the multi-node versions replace implementation
 | 1 | Every backup is a `backup_runs` row first, then the worker or the request runs it | One history, lock, progress and cancel; clicks, schedules and hooks share the code |
 | 2 | One archive format, tar + Zstandard (level 3), compression `zstd` or `none` | Streams without seeking, no size limit, base library only, opens with ordinary tools; one format to restore and test |
 | 3 | No archives in the data directory by default; targets `stream` and `directory` first | A copy on the same disk is not a backup; streaming needs no space |
-| 4 | Master key excluded by default | A leaked archive should not carry the key to its secrets |
+| 4 | Master key never in an archive; it is required configuration (2026-11-19, section 17) | A leaked archive should not carry the key to its secrets; a server must never start with a new key that breaks the stored ones |
 | 5 | Restore only offline, by command | Replacing a running server's data is not a click |
 | 6 | Lease and multi-node coordination wait for phase 8 | Single node runs one process; the interfaces are ready |
 
@@ -276,11 +276,35 @@ runs the end-to-end suite on the linux-x64 AOT binary.
 | Archive from a file or an `http(s)://` URL, read as it downloads; a presigned URL's query never printed | `Infra/Backups/ArchiveSource.cs` |
 | `--if-empty`: a data directory with data is left alone (exit code 0) | `BackupRestorer`, `RestoreCommand` |
 | `.timestore-restore` while a restore writes: an interrupted restore starts over; the server refuses to start on it | `BackupRestorer.InProgressMarker`, `Program.cs` |
-| `restore.archive` in the chart: an init container `restore --if-empty` (data claim, backups claim read-only, master key to `/data/master.key`) | `deploy/helm/timestore/templates/statefulset.yaml` |
+| `restore.archive` in the chart: an init container `restore --if-empty` (data claim, backups claim read-only) | `deploy/helm/timestore/templates/statefulset.yaml` |
 
 Tests: the restorer skips a directory with data without reading the archive, restores an empty one (a `lost+found`
 kept), starts over after an interrupted restore, leaves no marker after a failure, reads from a URL, refuses an
 unreadable file or URL without quoting the URL's query; end to end, a restore from a URL with `--if-empty`, then a
 second run that skips; a server refuses to start on an unfinished restore. The chart renders the init container only
 with `restore.archive` (CI renders it).
+
+## 17. The master key becomes configuration (2026-11-19)
+
+Until now TimeStore created `master.key` (32 random bytes) in the data directory at the first start, and a backup took
+it only when an admin key asked (`includeMasterKey`). Two problems: a lost or replaced key file made the server create
+a new key without a word, after which every stored access key stopped signing; and a key inside the data volume
+travels with every volume backup, while an archive needed a special request and an admin key to be complete.
+
+How others take their key: MinIO reads a static KMS key from `MINIO_KMS_SECRET_KEY` (`name:base64-32-bytes`) or
+`MINIO_KMS_SECRET_KEY_FILE` (and recommends a KMS for production); Garage takes its secrets (`rpc_secret`,
+`admin_token`) as a value, a `*_file` or an environment variable; none of them creates a key silently. SeaweedFS keeps
+S3 identities in its filer as JSON (no encryption of the secrets found).
+
+| Decision | Why |
+|---|---|
+| `TimeStore:MasterKey` (Base64, 32 bytes) or `TimeStore:MasterKeyFile` (Base64 text, or the 32 raw bytes of an old `master.key`); exactly one, required | One kind of input, the same as the root key pair; a file for Docker and Kubernetes secrets |
+| Never created; a missing, malformed or doubled key stops the server with one line (exit code 1) | No silent new key |
+| At startup the key must decrypt every stored access key, else "the master key does not decrypt N of M stored access keys" | A wrong key (another server's, a typo) shows at once, not as keys that stop signing |
+| Archives never hold the key: `includeMasterKey`, `BACKUP_MASTER_KEY_FORBIDDEN`, `--master-key` and `backup_runs.include_master_key` (migration 11) removed | Backups need no admin key to be complete; a leaked archive cannot decrypt secrets |
+| Archives of earlier versions that hold a key still restore (written to `<data>/master.key`, with the steps to move it) | Existing archives stay usable |
+| Startup without a key but with `<data>/master.key` names the file and the two ways to move it | Upgrades say what to do |
+| Helm: `masterKey.value` (the chart's Secret) or `masterKey.existingSecret`, required; always mounted as a file | No `lookup`-generated key: `helm template` (TimeOps) would render a new one each time |
+
+Later: key rotation (the ciphertext's key id lets several keys decrypt), a KMS.
 

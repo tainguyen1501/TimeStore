@@ -36,10 +36,8 @@ Backups (the server keeps running; docs/backup.md):
 restore.archive is set: an empty data volume is filled from it before the server starts (a volume with data is left
 alone). Once the server runs on the restored data, remove restore.archive from the values.
 {{- end }}
-{{- if not .Values.masterKey.existingSecret }}
 
-The master key is kept inside the data volume. For production, create it as a Secret and keep a copy apart from the
-data (masterKey.existingSecret, docs/backup.md).
-{{- end }}
+Keep a copy of the master key apart from the cluster (Secret {{ include "timestore.masterKeySecretName" . }}): without it
+every access key must be created again.
 
 Check the installation: helm test {{ .Release.Name }} -n {{ .Release.Namespace }}

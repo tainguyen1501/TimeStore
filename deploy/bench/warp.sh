@@ -14,6 +14,7 @@ WARP_IMAGE="minio/warp:v1.3.1"   # newest published image (2026-11-16)
 DURATION="${DURATION:-15s}"
 ACCESS_KEY="warp-bench"
 SECRET_KEY="warp-bench-secret-key"
+MASTER_KEY="$(openssl rand -base64 32)" # a fresh server per run: any key will do
 TARGET="${1:?usage: warp.sh host <binary> | docker [image]}"
 read -r -a server_env <<<"${SERVER_ENV:-}"   # KEY=VALUE pairs passed to the server process
 
@@ -44,7 +45,7 @@ case "$TARGET" in
     binary="${2:?usage: warp.sh host <path to TimeStore.Server>}"
     port=$((20000 + RANDOM % 20000))
     env ${server_env[@]+"${server_env[@]}"} TimeStore__S3Port=$port TimeStore__AdminPort=$((port + 1)) TimeStore__DataPath="$work/data" \
-      TimeStore__S3__RootAccessKey=$ACCESS_KEY TimeStore__S3__RootSecretKey=$SECRET_KEY \
+      TimeStore__S3__RootAccessKey=$ACCESS_KEY TimeStore__S3__RootSecretKey=$SECRET_KEY TimeStore__MasterKey="$MASTER_KEY" \
       TimeStore__BlobSweep__Enabled=false TimeStore__Multipart__AbandonAfterDays=0 Logging__LogLevel__Default=Warning \
       "$binary" >"$work/server.log" 2>&1 &
     server_pid=$!
@@ -58,7 +59,7 @@ case "$TARGET" in
     docker_env=()
     for pair in ${server_env[@]+"${server_env[@]}"}; do docker_env+=(-e "$pair"); done
     docker run -d --name timestore-bench --network timestore-bench -p 127.0.0.1::9001 \
-      -e TimeStore__S3__RootAccessKey=$ACCESS_KEY -e TimeStore__S3__RootSecretKey=$SECRET_KEY \
+      -e TimeStore__S3__RootAccessKey=$ACCESS_KEY -e TimeStore__S3__RootSecretKey=$SECRET_KEY -e TimeStore__MasterKey="$MASTER_KEY" \
       -e TimeStore__BlobSweep__Enabled=false -e TimeStore__Multipart__AbandonAfterDays=0 \
       -e Logging__LogLevel__Default=Warning ${docker_env[@]+"${docker_env[@]}"} "$image" >/dev/null
     endpoint="timestore-bench:9000"

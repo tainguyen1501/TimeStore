@@ -74,7 +74,7 @@ DeleteObjects) and returning stored checksums. `SigningKeyCache` became a bounde
 - Done: README for the public release (why, quick start, what works, benchmarks on Linux and macOS with the method
   and caveats); settings moved to `docs/configuration.md`.
 - Done: Helm chart (`deploy/helm/timestore`): one-replica StatefulSet with its volume, generated or existing root
-  keys, optional master-key Secret, S3 and admin services and ingresses, non-root read-only pod, `helm test`; CI lints,
+  keys, required master key (a value or a Secret), S3 and admin services and ingresses, non-root read-only pod, `helm test`; CI lints,
   renders and validates it; releases push it to `oci://ghcr.io/<owner>/charts`. Verified on k3s 1.31 (install,
   `helm test`, ingress, upgrade, pod restart, uninstall and reinstall keep the data; Helm 3.16 and 4).
 - Left: a release candidate (`v0.1.0-rc.1`); `v0.1.0`; make the repository

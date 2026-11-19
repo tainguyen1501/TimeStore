@@ -18,9 +18,9 @@ public sealed class BackupServiceTests : IAsyncDisposable
     private readonly DeferredBlobDeletions _deletions;
     private readonly BackupRunner _runner;
 
-    private static readonly BackupOptions Options = new("node-1", ".", "tmp", "master.key", BackupCompressions.Zstd, 3, 0);
-    private static readonly BackupCaller Admin = new("root", MayIncludeMasterKey: true);
-    private static readonly BackupCaller BackupKey = new("backup-job", MayIncludeMasterKey: false);
+    private static readonly BackupOptions Options = new("node-1", ".", "tmp", BackupCompressions.Zstd, 3, 0);
+    private static readonly BackupCaller Admin = new("root");
+    private static readonly BackupCaller BackupKey = new("backup-job");
 
     public BackupServiceTests()
     {
@@ -41,8 +41,8 @@ public sealed class BackupServiceTests : IAsyncDisposable
         var result = await Service().StartAsync(new StartBackupRequest(), Admin, _ct);
 
         var run = result.Value;
-        Assert.Equal((BackupRunStatuses.Queued, "manual", "directory", "zstd", "root", false),
-            (run.Status, run.Trigger, run.Target, run.Compression, run.StartedBy, run.IncludeMasterKey));
+        Assert.Equal((BackupRunStatuses.Queued, "manual", "directory", "zstd", "root"),
+            (run.Status, run.Trigger, run.Target, run.Compression, run.StartedBy));
         await foreach (var queued in _queue.ReadAllAsync(_ct))
         {
             Assert.Equal(run.Id, queued);
@@ -107,7 +107,7 @@ public sealed class BackupServiceTests : IAsyncDisposable
     {
         var target = new MemoryBackupTarget(BackupTargetTypes.Stream);
 
-        var (result, exception) = await Service().StreamAsync(BackupCompressions.None, false, Admin, target, _ct);
+        var (result, exception) = await Service().StreamAsync(BackupCompressions.None, Admin, target, _ct);
 
         Assert.Null(exception);
         Assert.Equal((BackupRunStatuses.Succeeded, "api", "stream"), (result.Value.Status, result.Value.Trigger, result.Value.Target));
@@ -116,18 +116,10 @@ public sealed class BackupServiceTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task OnlyAnAdmin_MayIncludeTheMasterKey()
+    public async Task ABackupKey_StartsBackups_UnderItsOwnName()
     {
-        var service = Service();
+        var started = await Service().StartAsync(new StartBackupRequest(), BackupKey, _ct);
 
-        Assert.Equal(BackupErrors.Codes.MasterKeyForbidden,
-            (await service.StartAsync(new StartBackupRequest(IncludeMasterKey: true), BackupKey, _ct)).Error.Code);
-        var (streamed, _) = await service.StreamAsync(null, includeMasterKey: true, BackupKey,
-            new MemoryBackupTarget(BackupTargetTypes.Stream), _ct);
-        Assert.Equal(BackupErrors.Codes.MasterKeyForbidden, streamed.Error.Code);
-        Assert.Empty(await service.ListAsync(_ct)); // refused before any run is created
-
-        var started = await service.StartAsync(new StartBackupRequest(), BackupKey, _ct);
         Assert.Equal("backup-job", started.Value.StartedBy);
     }
 }

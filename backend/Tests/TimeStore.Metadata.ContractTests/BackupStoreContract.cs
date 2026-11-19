@@ -230,7 +230,7 @@ public abstract class BackupStoreContract : IAsyncLifetime
     // --- Helpers ---------------------------------------------------------------------------------------------------
 
     private static BackupRun Queued() =>
-        BackupRun.Queue(BackupTriggers.Manual, BackupTargetTypes.Directory, BackupCompressions.Zstd, false, "admin", Now);
+        BackupRun.Queue(BackupTriggers.Manual, BackupTargetTypes.Directory, BackupCompressions.Zstd, "admin", Now);
 
     private static BackupOutcome Outcome(BackupStatus status) =>
         new(status, Now.AddMinutes(1), BackupProgress.None, null, null, null, null);

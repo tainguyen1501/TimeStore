@@ -36,6 +36,7 @@ WARP_IMAGE="minio/warp:v1.3.1"
 # Garage key ids are "GK" + 24 hex characters, secrets 64 hex characters; the other servers take any value.
 ACCESS_KEY="GK0123456789abcdef01234567"
 SECRET_KEY="0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+MASTER_KEY="$(openssl rand -base64 32)" # a fresh TimeStore per run: any key will do
 REGION="us-east-1"
 
 NETWORK="s3bench"
@@ -99,7 +100,7 @@ start_server() {
   case "$1" in
     timestore)
       docker run -d --name "$SERVER" "${limits[@]}" \
-        -e TimeStore__S3__RootAccessKey=$ACCESS_KEY -e TimeStore__S3__RootSecretKey=$SECRET_KEY \
+        -e TimeStore__S3__RootAccessKey=$ACCESS_KEY -e TimeStore__S3__RootSecretKey=$SECRET_KEY -e TimeStore__MasterKey="$MASTER_KEY" \
         -e TimeStore__S3__Region=$REGION -e TimeStore__DataPath=/data \
         -e TimeStore__BlobSweep__Enabled=false -e TimeStore__Multipart__AbandonAfterDays=0 \
         -e Logging__LogLevel__Default=Warning "$TIMESTORE_IMAGE" >/dev/null

@@ -2554,7 +2554,6 @@ export interface paths {
             parameters: {
                 query?: {
                     compression?: string;
-                    includeMasterKey?: boolean;
                 };
                 header?: never;
                 path?: never;
@@ -2836,7 +2835,6 @@ export interface components {
             trigger: string;
             target: string;
             compression: string;
-            includeMasterKey: boolean;
             startedBy: string;
             /** Format: date-time */
             queuedAt: string;
@@ -3151,8 +3149,6 @@ export interface components {
         StartBackupRequest: {
             target?: null | string;
             compression?: null | string;
-            /** @default false */
-            includeMasterKey: boolean;
         };
         StartUploadRequest: {
             key: string;

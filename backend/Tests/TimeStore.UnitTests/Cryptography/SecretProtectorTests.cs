@@ -61,33 +61,60 @@ public sealed class SecretProtectorTests
         Assert.Throws<ArgumentException>(() => new AesGcmSecretProtector(new byte[16]));
 
     [Fact]
-    public void MasterKeyFile_IsCreatedOnce_OwnerOnly_AndReloaded()
+    public void MasterKey_AsBase64_IsThirtyTwoBytes()
     {
-        var path = Path.Combine(Path.GetTempPath(), "timestore-tests", Guid.NewGuid().ToString("N"), "master.key");
+        var key = RandomNumberGenerator.GetBytes(AesGcmSecretProtector.MasterKeyLength);
+
+        Assert.Equal(key, MasterKeyFile.Parse($" {Convert.ToBase64String(key)}\n", "TimeStore:MasterKey"));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("not base64!")]
+    [InlineData("AAAAAAAAAAAAAAAAAAAAAA==")] // 16 bytes
+    [InlineData("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==")] // 64 bytes
+    public void MasterKey_OfAnotherShape_StopsStartup_WithoutQuotingIt(string text)
+    {
+        var failure = Assert.Throws<InvalidOperationException>(() => MasterKeyFile.Parse(text, "TimeStore:MasterKey"));
+
+        Assert.Contains("openssl rand -base64 32", failure.Message);
+        if (text.Length > 0)
+            Assert.DoesNotContain(text, failure.Message);
+    }
+
+    [Fact]
+    public void MasterKeyFile_HoldsBase64_OrTheRawBytesOfEarlierVersions()
+    {
+        var key = RandomNumberGenerator.GetBytes(AesGcmSecretProtector.MasterKeyLength);
+        var directory = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), "timestore-tests", Guid.NewGuid().ToString("N")));
         try
         {
-            var created = MasterKeyFile.LoadOrCreate(path);
-            var loaded = MasterKeyFile.LoadOrCreate(path);
+            var text = Path.Combine(directory.FullName, "key.txt");
+            var raw = Path.Combine(directory.FullName, "master.key");
+            File.WriteAllText(text, Convert.ToBase64String(key) + "\n");
+            File.WriteAllBytes(raw, key);
 
-            Assert.Equal(AesGcmSecretProtector.MasterKeyLength, created.Length);
-            Assert.Equal(created, loaded);
-            if (!OperatingSystem.IsWindows())
-                Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, File.GetUnixFileMode(path));
+            Assert.Equal(key, MasterKeyFile.Load(text));
+            Assert.Equal(key, MasterKeyFile.Load(raw));
         }
         finally
         {
-            Directory.Delete(Path.GetDirectoryName(path)!, recursive: true);
+            directory.Delete(recursive: true);
         }
     }
 
     [Fact]
-    public void MasterKeyFile_WithWrongLength_StopsStartup()
+    public void MasterKeyFile_ThatIsMissingOrWrong_StopsStartup_AndIsNeverCreated()
     {
         var path = Path.Combine(Path.GetTempPath(), $"timestore-{Guid.NewGuid():N}.key");
+
+        Assert.Throws<InvalidOperationException>(() => MasterKeyFile.Load(path));
+        Assert.False(File.Exists(path));
+
         File.WriteAllBytes(path, new byte[31]);
         try
         {
-            Assert.Throws<InvalidOperationException>(() => MasterKeyFile.LoadOrCreate(path));
+            Assert.Throws<InvalidOperationException>(() => MasterKeyFile.Load(path));
         }
         finally
         {

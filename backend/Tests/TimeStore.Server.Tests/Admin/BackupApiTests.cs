@@ -70,7 +70,7 @@ public sealed class BackupApiTests(BackupServer server) : IClassFixture<BackupSe
         await PutAsync(s3, versioned, "doc.txt", "second");
         var key = await CreateAccessKeyAsync();
 
-        var (archive, response) = await StreamAsync($"?compression={compression}&includeMasterKey=true");
+        var (archive, response) = await StreamAsync($"?compression={compression}");
         Assert.Equal(contentType, response.Content.Headers.ContentType?.MediaType);
         Assert.EndsWith(extension, response.Content.Headers.ContentDisposition?.FileName?.Trim('"'));
         await PutAsync(s3, bucket, "late.txt", "after T"); // not in the archive
@@ -88,7 +88,7 @@ public sealed class BackupApiTests(BackupServer server) : IClassFixture<BackupSe
         Assert.Equal(2, versions.Versions.Count(v => v.Key == "doc.txt"));
         Assert.Equal("second", await ReadAsync(copy, versioned, "doc.txt"));
 
-        // The master key came along: an access key created before T still signs.
+        // The restored server has the same master key (configuration): an access key created before T still signs.
         using var keyed = restored.Client(key.AccessKeyId, key.SecretKey);
         Assert.Contains((await keyed.ListBucketsAsync(_ct)).Buckets, b => b.BucketName == bucket);
 
@@ -242,13 +242,9 @@ public sealed class BackupApiTests(BackupServer server) : IClassFixture<BackupSe
         using (var wrongSecret = server.BackupClient(backup.AccessKeyId, "not-the-secret-key"))
             await AssertErrorAsync(await wrongSecret.GetAsync(Backups, _ct), HttpStatusCode.Forbidden, S3AuthErrors.Codes.SignatureMismatch);
 
-        // A backup key lists and starts backups, never with the master key, and cannot sign in to the admin UI.
+        // A backup key lists and starts backups, and cannot sign in to the admin UI.
         using var signedByBackup = server.BackupClient(backup.AccessKeyId, backup.SecretKey);
         Assert.Equal(HttpStatusCode.OK, (await signedByBackup.GetAsync(Backups, _ct)).StatusCode);
-        await AssertErrorAsync(await signedByBackup.PostAsJsonAsync(Backups, new StartBackupRequest(IncludeMasterKey: true), Json, _ct),
-            HttpStatusCode.Forbidden, BackupErrors.Codes.MasterKeyForbidden);
-        await AssertErrorAsync(await signedByBackup.GetAsync($"{Backups}/stream?includeMasterKey=true", _ct),
-            HttpStatusCode.Forbidden, BackupErrors.Codes.MasterKeyForbidden);
         var started = await signedByBackup.PostAsJsonAsync(Backups, new StartBackupRequest(), Json, _ct);
         Assert.Equal(HttpStatusCode.Accepted, started.StatusCode);
         var run = (await started.Content.ReadFromJsonAsync<BackupRunResponse>(Json, _ct))!;
@@ -272,13 +268,13 @@ public sealed class BackupApiTests(BackupServer server) : IClassFixture<BackupSe
         await AssertErrorAsync(response, HttpStatusCode.BadRequest, AuthErrors.Codes.PayloadMismatch);
     }
 
-    /// <summary>Changes the body after the signing handler hashed and signed it (asks for the master key instead).</summary>
+    /// <summary>Changes the body after the signing handler hashed and signed it (asks for zstd instead).</summary>
     private sealed class TamperingHandler() : DelegatingHandler(new HttpClientHandler())
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             var headers = request.Content!.Headers.ToArray();
-            request.Content = new StringContent("{\"includeMasterKey\":true}");
+            request.Content = new StringContent("{\"compression\":\"zstd\"}");
             request.Content.Headers.Clear();
             foreach (var header in headers)
                 request.Content.Headers.TryAddWithoutValidation(header.Key, header.Value);

@@ -36,6 +36,22 @@ if (options.Validate() is { } problem)
     return StartupRefused;
 }
 
+byte[] masterKey;
+try
+{
+    masterKey = string.IsNullOrWhiteSpace(options.MasterKey)
+        ? MasterKeyFile.Load(options.MasterKeyFile!)
+        : MasterKeyFile.Parse(options.MasterKey, $"{ServerOptions.Section}:{nameof(ServerOptions.MasterKey)}");
+}
+catch (InvalidOperationException failure)
+{
+    await Console.Error.WriteLineAsync($"TimeStore cannot start: {failure.Message}");
+    return StartupRefused;
+}
+
+var protector = new AesGcmSecretProtector(masterKey);
+System.Security.Cryptography.CryptographicOperations.ZeroMemory(masterKey); // lives on only inside the protector
+
 // A restore was cut half way (a pod killed during the chart's restore init container): never serve partial data.
 if (File.Exists(Path.Combine(options.DataPath, BackupRestorer.InProgressMarker)))
 {
@@ -73,7 +89,7 @@ builder.Services.Configure<RouteHandlerOptions>(routing => routing.ThrowOnBadReq
 builder.Services.AddSingleton(options);
 builder.Services.AddSingleton(new S3Router(options.S3.Domains));
 builder.Services.AddSingleton(new RootCredential(new AccessCredential(options.S3.RootAccessKey, options.S3.RootSecretKey)));
-builder.Services.AddSingleton<ISecretProtector>(MasterKey.CreateProtector(options.MasterKeyPath));
+builder.Services.AddSingleton<ISecretProtector>(protector);
 builder.Services.AddSingleton<ISecretKeyResolver, CredentialSecretResolver>();
 builder.Services.AddSingleton<SigningKeyCache>();
 builder.Services.AddSingleton(new SigV4Options(options.S3.Region, TimeSpan.FromSeconds(options.S3.MaxClockSkewSeconds)));
@@ -91,7 +107,7 @@ builder.Services.AddSingleton(new AdminSessionOptions(options.Admin.SessionLifet
 builder.Services.AddSingleton(new BlobDeletionOptions(options.Blobs.DeleteDelay));
 builder.Services.AddSingleton(new StorageMetricsOptions(options.DataPath));
 builder.Services.AddSingleton(new BackupOptions(
-    options.NodeId, options.DataPath, Path.Combine(options.DataPath, FileSystemBlobStore.TempDirectory), options.MasterKeyPath,
+    options.NodeId, options.DataPath, Path.Combine(options.DataPath, FileSystemBlobStore.TempDirectory),
     options.Backup.Compression, options.Backup.CompressionLevel, options.Backup.MinFreeBytes));
 if (options.Backup.HasDirectory)
     builder.Services.AddDirectoryBackupTarget(new DirectoryBackupOptions(options.Backup.Path!));
@@ -119,6 +135,16 @@ if (!IPAddress.IsLoopback(IPAddress.Parse(options.AdminAddress)) && !options.Adm
 foreach (var initializer in app.Services.GetServices<IStorageInitializer>())
     await initializer.InitializeAsync(app.Lifetime.ApplicationStopping);
 
+var (unreadable, accessKeys) = await MasterKeyCheck.CountUnreadableAsync(
+    app.Services.GetRequiredService<IMetadataStore>(), protector, app.Lifetime.ApplicationStopping);
+if (unreadable > 0)
+{
+    await Console.Error.WriteLineAsync(
+        $"TimeStore cannot start: the master key does not decrypt {unreadable} of {accessKeys} stored access keys, so it "
+        + "is not the key they were encrypted with. Configure the original key (a new key cannot read them).");
+    return StartupRefused;
+}
+
 app.UseTimeStoreExceptionHandler(options.S3Port);
 app.UseS3Api(options); // S3 port: own middleware branch + dispatcher, never reaches endpoint routing
 app.UseAdminAuthentication(); // admin port only: the S3 branch above answers every S3 request
@@ -134,20 +160,3 @@ app.UseAdminUi(options.Admin); // everything else on the admin port: the React U
 
 await app.RunAsync();
 return 0;
-
-internal static class MasterKey
-{
-    /// <summary>Loads (or creates) the master key file; the key bytes live on only inside the protector.</summary>
-    public static AesGcmSecretProtector CreateProtector(string path)
-    {
-        var key = MasterKeyFile.LoadOrCreate(path);
-        try
-        {
-            return new AesGcmSecretProtector(key);
-        }
-        finally
-        {
-            System.Security.Cryptography.CryptographicOperations.ZeroMemory(key);
-        }
-    }
-}

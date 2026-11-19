@@ -123,15 +123,18 @@ public sealed class BackupRestorerTests : IDisposable
     }
 
     [Fact]
-    public async Task Restore_WhenTheMasterKeyFileExists_IsRefused()
+    public async Task AnArchiveOfAnEarlierVersion_WithItsMasterKey_IsRestored_AndTheKeyWrittenPrivately()
     {
-        var key = Path.Combine(_root, "existing.key");
-        await File.WriteAllTextAsync(key, "keep me", _ct);
+        var key = RandomNumberGenerator.GetBytes(32);
 
-        var result = await RestoreAsync(await ArchiveAsync(masterKey: [9, 9]), key);
+        var result = await RestoreAsync(await ArchiveAsync(masterKey: key));
 
-        Assert.Equal(BackupErrors.Codes.RestoreMasterKeyExists, result.Error.Code);
-        Assert.Equal("keep me", await File.ReadAllTextAsync(key, _ct));
+        Assert.True(result.IsSuccess, result.IsFailure ? result.Error.Message : null);
+        Assert.True(result.Value.MasterKeyRestored);
+        var written = Path.Combine(DataPath, "master.key");
+        Assert.Equal(key, await File.ReadAllBytesAsync(written, _ct));
+        if (!OperatingSystem.IsWindows())
+            Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, File.GetUnixFileMode(written));
     }
 
     [Fact]
@@ -285,9 +288,9 @@ public sealed class BackupRestorerTests : IDisposable
             Assert.False(Directory.Exists(DataPath)); // created by the restore, removed again
     }
 
-    private ValueTask<Primitives.Result<RestoreSummary>> RestoreAsync(string archive, string? masterKeyPath = null, bool ifEmpty = false) =>
+    private ValueTask<Primitives.Result<RestoreSummary>> RestoreAsync(string archive, bool ifEmpty = false) =>
         new BackupRestorer(_format).RestoreAsync(
-            new RestoreRequest(archive, DataPath, masterKeyPath ?? Path.Combine(DataPath, "master.key"), 10, ifEmpty), _ct);
+            new RestoreRequest(archive, DataPath, 10, ifEmpty), _ct);
 
     /// <summary>Writes an archive the way the engine does, with knobs to break it.</summary>
     private async Task<string> ArchiveAsync(

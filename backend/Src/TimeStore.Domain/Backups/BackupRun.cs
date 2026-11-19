@@ -18,7 +18,6 @@ public sealed record BackupRun(
     string Trigger,
     string TargetType,
     string Compression,
-    bool IncludeMasterKey,
     string StartedBy,
     DateTime QueuedAt,
     DateTime? StartedAt,
@@ -37,8 +36,8 @@ public sealed record BackupRun(
 
     /// <summary>A new run waiting for the worker (or for the request that streams it).</summary>
     public static BackupRun Queue(
-        string trigger, string targetType, string compression, bool includeMasterKey, string startedBy, DateTime now) =>
-        new(Guid.CreateVersion7(), BackupStatus.Queued, trigger, targetType, compression, includeMasterKey, startedBy,
+        string trigger, string targetType, string compression, string startedBy, DateTime now) =>
+        new(Guid.CreateVersion7(), BackupStatus.Queued, trigger, targetType, compression, startedBy,
             now, null, null, null, BackupProgress.None, null, null, null, null, null);
 
     public bool IsActive => Status is BackupStatus.Queued or BackupStatus.Running;

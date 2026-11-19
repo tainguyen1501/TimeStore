@@ -146,8 +146,9 @@ are almost always bugs and cannot be listed without `encoding-type=url` anyway. 
 
 - Table `access_keys (access_key_id PK, secret_ciphertext BLOB, description, created_at, disabled_at)`; the secret is
   needed in plain text for SigV4, so it is **encrypted at rest** with AES-256-GCM via `ISecretProtector` in
-  `TimeStore.Cryptography` (BCL `AesGcm`, AOT-safe). Master key: a 32-byte key file in the data directory created on
-  first start with owner-only permissions, overridable by `TimeStore:MasterKeyFile`/environment.
+  `TimeStore.Cryptography` (BCL `AesGcm`, AOT-safe). Master key: 32 bytes the operator provides
+  (`TimeStore:MasterKey` or `MasterKeyFile`); earlier versions created a key file in the data directory (changed
+  2026-11-19, docs/research/backup.md section 17).
 - `ICredentialStore` implementation: database keys + the configured root key (break-glass), cached through
   `ICacheService` and invalidated on change (misses are not cached, so random ids cannot fill the cache).
   `SigningKeyCache` stays as it is: it is reached only with a secret the credential store returned, so a disabled or
@@ -197,7 +198,7 @@ metadata in one SQLite file, so the set difference is cheap and can run in-proce
 2. Conditional requests (`If-Match`, `If-None-Match`, `If-Modified-Since`, `If-Unmodified-Since`, and
    `If-None-Match: *` on PUT) are **part of phase 2** (step 2c / 2b).
 3. Access keys in the database are **step 2f of phase 2**.
-4. Master key: a 32-byte file created on first start in the data directory (`master.key`, owner-only), overridable
-   with `TimeStore:MasterKeyFile` (e.g. a Kubernetes secret mount).
+4. Master key: 32 bytes the operator provides (`TimeStore:MasterKey`, or `MasterKeyFile` such as a Kubernetes Secret
+   mount); never created by TimeStore (until 2026-11-19 a `master.key` file was created in the data directory).
 5. The configured root key stays as a **break-glass key**: always valid, never listed, disabled or deleted through
    the API.

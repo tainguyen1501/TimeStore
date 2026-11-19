@@ -13,7 +13,6 @@ public static class BackupErrors
         public const string InvalidCompression = "BACKUP_INVALID_COMPRESSION";
         public const string NotActive = "BACKUP_NOT_ACTIVE";
         public const string ArchiveNotFound = "BACKUP_ARCHIVE_NOT_FOUND";
-        public const string MasterKeyForbidden = "BACKUP_MASTER_KEY_FORBIDDEN";
 
         // Why a run failed (recorded on the run, not answered by a request).
         public const string LowDiskSpace = "BACKUP_LOW_DISK_SPACE";
@@ -28,7 +27,6 @@ public static class BackupErrors
         public const string RestoreInvalidArchive = "BACKUP_RESTORE_INVALID_ARCHIVE";
         public const string RestoreUnsupported = "BACKUP_RESTORE_UNSUPPORTED";
         public const string RestoreChecksumMismatch = "BACKUP_RESTORE_CHECKSUM_MISMATCH";
-        public const string RestoreMasterKeyExists = "BACKUP_RESTORE_MASTER_KEY_EXISTS";
         public const string RestoreArchiveUnavailable = "BACKUP_RESTORE_ARCHIVE_UNAVAILABLE";
     }
 
@@ -46,9 +44,6 @@ public static class BackupErrors
 
     public static readonly AppError InvalidCompression =
         AppError.Validation(Codes.InvalidCompression, "Compression must be 'zstd' or 'none'.");
-
-    public static readonly AppError MasterKeyForbidden = AppError.Forbidden(Codes.MasterKeyForbidden,
-        "Only an admin key may put the master key in an archive; a backup key takes archives without it.");
 
     public static readonly AppError NotActive =
         AppError.Conflict(Codes.NotActive, "The backup has already finished.");
@@ -87,7 +82,4 @@ public static class BackupErrors
 
     public static AppError RestoreArchiveUnavailable(string archive, string reason) =>
         AppError.Validation(Codes.RestoreArchiveUnavailable, $"The archive {archive} cannot be read: {reason}");
-
-    public static readonly AppError RestoreMasterKeyExists = AppError.Conflict(Codes.RestoreMasterKeyExists,
-        "A master key file already exists where the archive's key would go; a restore never overwrites a key.");
 }

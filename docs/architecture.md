@@ -27,7 +27,6 @@
 ```
 data/
   metadata.db              SQLite (WAL): buckets, objects, versions, uploads, parts, access keys
-  master.key               32-byte AES key for stored secrets (owner-only; TimeStore:MasterKeyFile moves it)
   blobs/<xy>/<uuidv7>      immutable blob files; <xy> = last two hex chars of the id
   tmp/<uuidv7>.tmp         in-flight writes; deleted at startup
   tmp/backup-<run id>.*    a running backup's metadata snapshot and checksum list; deleted when it ends and at startup

@@ -135,12 +135,19 @@ jobs:
       - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
         with:
           version: v4.3.1
+      # The master key is required (TimeStore never creates one): a throwaway key for the checks.
       - name: Lint
-        run: helm lint deploy/helm/timestore
+        run: |
+          helm lint deploy/helm/timestore --set "masterKey.value=$(openssl rand -base64 32)"
+          # Without a master key the chart refuses to render.
+          if helm template t deploy/helm/timestore > /dev/null 2>&1; then
+            echo "::error::the chart rendered without a master key"; exit 1
+          fi
       - name: Render
         run: |
           mkdir -p "$RUNNER_TEMP/render"
-          helm template t deploy/helm/timestore --kube-version 1.31.0 > "$RUNNER_TEMP/render/default.yaml"
+          KEY="masterKey.value=$(openssl rand -base64 32)"
+          helm template t deploy/helm/timestore --kube-version 1.31.0 --set "$KEY" > "$RUNNER_TEMP/render/default.yaml"
           helm template t deploy/helm/timestore --kube-version 1.31.0 \
             --set 'ingress.s3.enabled=true,ingress.s3.host=s3.example.org,ingress.s3.tlsSecret=s3-tls' \
             --set 'ingress.admin.enabled=true,ingress.admin.tlsSecret=admin-tls' \
@@ -148,7 +155,7 @@ jobs:
             --set 'backup.existingClaim=timestore-backups,backup.compression=none,backup.minFreeBytes=10737418240' \
             --set 'restore.archive=/backups/t/timestore-node-1-20261119T050809Z.tar.zst' \
             > "$RUNNER_TEMP/render/full.yaml"
-          helm template t deploy/helm/timestore --kube-version 1.31.0 --set persistence.enabled=false \
+          helm template t deploy/helm/timestore --kube-version 1.31.0 --set persistence.enabled=false --set "$KEY" \
             > "$RUNNER_TEMP/render/ephemeral.yaml"
       - name: Kubernetes schemas
         run: |

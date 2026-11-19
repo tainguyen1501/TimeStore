@@ -20,7 +20,7 @@ public interface IBackupService
     /// comes along for the log.
     /// </summary>
     ValueTask<(Result<BackupRunResponse> Result, Exception? Exception)> StreamAsync(
-        string? compression, bool includeMasterKey, BackupCaller caller, IBackupTarget target, CancellationToken ct);
+        string? compression, BackupCaller caller, IBackupTarget target, CancellationToken ct);
 
     /// <summary>The newest runs first.</summary>
     ValueTask<IReadOnlyList<BackupRunResponse>> ListAsync(CancellationToken ct);
@@ -36,9 +36,8 @@ public interface IBackupService
 
 public sealed record BackupArchiveDownload(string Name, string Compression, Stream Content);
 
-/// <summary>Who starts a backup.</summary>
-/// <param name="MayIncludeMasterKey">Only admin keys may put the master key in an archive (backup keys may not).</param>
-public sealed record BackupCaller(string AccessKeyId, bool MayIncludeMasterKey);
+/// <summary>Who starts a backup (an admin key or a key with the backup role).</summary>
+public sealed record BackupCaller(string AccessKeyId);
 
 /// <summary>Executes runs (the engine): claim, hold, snapshot, archive, finish. Used by the worker and the service.</summary>
 public interface IBackupRunner
@@ -79,14 +78,12 @@ public interface IBackupQueue
 /// <param name="CompressionLevel">Zstandard level, 1-19.</param>
 /// <param name="MinFreeBytes">A run refuses to start with less free space in the data directory (released blobs stay
 /// on disk until it ends).</param>
-/// <param name="MasterKeyPath">The master key file, archived only when a run asks for it.</param>
 /// <param name="DataPath">The data directory (free space is measured there).</param>
 /// <param name="TempPath">Scratch space of a run (its checksum list), emptied of <c>*.tmp</c> files at startup.</param>
 public sealed record BackupOptions(
     string NodeId,
     string DataPath,
     string TempPath,
-    string MasterKeyPath,
     string Compression,
     int CompressionLevel,
     long MinFreeBytes)

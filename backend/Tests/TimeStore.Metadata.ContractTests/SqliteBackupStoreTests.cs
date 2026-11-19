@@ -35,7 +35,7 @@ public sealed class SqliteBackupStoreTests : BackupStoreContract
     public async Task Snapshot_LeavesOutSessionsAndBackupHistory_AndIsSelfContained()
     {
         await Store.CreateSessionAsync(new AdminSession([1, 2, 3], "root", DateTime.UtcNow, DateTime.UtcNow.AddHours(1)), Ct);
-        var run = Domain.Backups.BackupRun.Queue("manual", "stream", "zstd", false, "root", DateTime.UtcNow);
+        var run = Domain.Backups.BackupRun.Queue("manual", "stream", "zstd", "root", DateTime.UtcNow);
         Assert.True(await Runs.TryCreateBackupRunAsync(run, Ct));
 
         await using var snapshot = await Snapshots.CreateAsync(run.Id, Ct);

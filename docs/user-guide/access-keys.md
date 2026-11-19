@@ -8,7 +8,7 @@ listed; it always works and cannot be changed here.
 | Access key | The key id (`TS…`), what a client sends as `AWS_ACCESS_KEY_ID`. "You" marks the key you are signed in with |
 | Description | Who or what uses the key |
 | S3 access | **All buckets**: every bucket, unless a bucket policy denies it. **Bucket policies only**: only what a bucket policy allows (a key to share one bucket with someone); it cannot list or create buckets |
-| Role | **S3 only**: S3 API only. **Viewer**: S3, plus this UI read-only. **Admin**: S3, plus this UI with every action. **Backup**: for backup programs only: the backup API with signed requests, no sign-in to this UI, never the master key |
+| Role | **S3 only**: S3 API only. **Viewer**: S3, plus this UI read-only. **Admin**: S3, plus this UI with every action. **Backup**: for backup programs only: the backup API with signed requests, no sign-in to this UI |
 | Status | **Active**, or **Disabled** (S3 requests fail with `InvalidAccessKeyId`, sign-in is refused) |
 
 Viewers see the list only.

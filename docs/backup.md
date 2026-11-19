@@ -5,7 +5,7 @@
 Backups are one of four ways to protect TimeStore's data; [data-protection.md](data-protection.md) compares them and
 says which to use for your size.
 
-Everything TimeStore stores lives in one data directory, plus a master key and the configuration. The
+Everything TimeStore stores lives in one data directory; the master key and the rest of the configuration are yours. The
 [built-in backup](#built-in-backup-the-server-keeps-running) archives a running server consistently; a file-level copy
 must see the directory at one instant: copying it file by file while the server is writing can produce a backup that
 does not restore.
@@ -16,15 +16,14 @@ does not restore.
 |---|---|---|
 | Metadata | `<DataPath>/metadata.db`, with `metadata.db-wal` and `metadata.db-shm` while the server runs | Buckets, objects, versions, access keys, policies, lifecycle rules |
 | Object data | `<DataPath>/blobs/` | The bytes of every object version, one immutable file per blob |
-| Master key | `<DataPath>/master.key`, or the path in `MasterKeyFile` | Decrypts the stored secrets of access keys |
+| Master key | Your configuration: `MasterKey`, or the file in `MasterKeyFile` (never in the data directory) | Decrypts the stored secrets of access keys |
 | Configuration | `appsettings.json`, environment variables, your container or service definition | The root key pair (`S3:RootAccessKey`, `S3:RootSecretKey`), `NodeId`, ports and the rest of [the settings](configuration.md) |
 
 `DataPath` is `/data` in the container image and `./data` (relative to the working directory) otherwise. `<DataPath>/tmp/`
 holds writes in flight and is emptied at startup: it does not need a backup.
 
-**The master key matters.** If `master.key` is missing when the server starts, TimeStore creates a new one without
-warning, and every access key created before can no longer be used (the root key pair still works, since it comes from
-the configuration). Keep a copy of the key you can find again.
+**The master key matters.** Backups never hold it: keep a copy apart from the data ([The master key](#the-master-key)).
+Without it the data restores, but every access key other than the root key pair must be created again.
 
 ## Built-in backup (the server keeps running)
 
@@ -39,7 +38,6 @@ The archive is a tar file, compressed with Zstandard by default (`.tar.zst`; `no
 manifest.json                 what the archive holds (instant T, counts, versions, metadata checksum)
 metadata.db                   the metadata snapshot at T
 blobs/<xy>/<id>               the object data, same layout as the data directory
-master.key                    only when asked for (off by default)
 blobs.sha256                  checksum of every entry above (sha256sum format), last
 ```
 
@@ -51,12 +49,11 @@ role (or `admin`). Sign-in cookies are refused, so a browser cannot run backups.
 
 - Create a key for each program that backs up: **Access keys → Create**, role **Backup**, S3 scope **Policy only**
   (with no bucket policy it has no S3 access at all). A backup key calls the backup API only; it cannot sign in to the
-  admin UI and never gets an archive with the master key. Keep it in a secret store: an archive holds all the data.
+  admin UI. Keep it in a secret store: an archive holds all the data.
 - The secret key never travels: the client signs each request with it (valid for 15 minutes), as the AWS CLI does.
   `curl` 7.75 or newer signs with `--aws-sigv4`; the AWS SDKs sign any HTTP request too.
 
-The master key is **not** in the archive unless an **admin key** asks for it (`includeMasterKey=true`): keep the key
-apart (see below) and an archive alone cannot decrypt the access-key secrets.
+The master key is never in an archive: an archive alone cannot decrypt the access-key secrets.
 
 ### Download a backup as a stream
 
@@ -121,11 +118,13 @@ what the Helm chart's `restore.archive` runs in an init container at every start
 directory holds `.timestore-restore`; a restore cut half way leaves it, the next restore starts over, and the server
 refuses to start on such a directory.
 
-`--data-path` defaults to `TimeStore:DataPath` (`/data` in the image) and the key goes to `--master-key`, else
-`TimeStore:MasterKeyFile`, else `<data>/master.key`. When the archive holds no master key, put the original key there
-before the first start; otherwise the server creates a new one and the access keys stored before cannot be used (the
-root key pair still works). Then start the server with the same configuration (root key pair, `NodeId`). The restored
-server has no admin sessions and no backup history; sign in again.
+`--data-path` defaults to `TimeStore:DataPath` (`/data` in the image). Then start the server with the same
+configuration: the master key the access keys were encrypted with (a server with another key refuses to start and
+says so), the root key pair, `NodeId`. The restored server has no admin sessions and no backup history; sign in again.
+
+An archive of an earlier version may hold the master key (those versions could put it in): the restore writes it to
+`master.key` in the data directory and says so. Move it out of the data directory and set `MasterKeyFile` to it, or
+set `MasterKey` to `base64 < master.key`.
 
 The archive also opens with ordinary tools: `tar --zstd -xf <archive>` gives a data directory, and
 `sha256sum -c blobs.sha256` inside it checks it.
@@ -172,7 +171,7 @@ before its metadata commit, SQLite runs in WAL mode with `synchronous=FULL`, and
 place. A snapshot therefore always restores to the last committed state. Blobs written by uploads that had not
 committed yet are removed by the orphan sweep after the restore (`BlobSweep` settings).
 
-The data directory and the master key must be in the same snapshot, or the key must not have changed since.
+The master key is not in the snapshot: the restored server needs the key of its configuration.
 
 #### 3. Back up from a snapshot with a backup tool
 
@@ -205,8 +204,8 @@ zfs destroy tank/timestore@nightly
      sh -c 'tar -xzf /backup/timestore-20261118-0200.tar.gz -C /data && chown -R 1654:1654 /data'
    ```
    The container runs as user `app` (UID 1654): the restored files must belong to it.
-3. Make sure the master key is the one from the backup: `master.key` in the data directory, or the file
-   `MasterKeyFile` points to.
+3. Configure the master key the access keys were encrypted with (`MasterKey` or `MasterKeyFile`); with another key
+   the server refuses to start and says so.
 4. Start the server with the same configuration: the same root key pair, and the same `NodeId` (default `node-1`).
 5. Check: sign in to the admin UI, list the buckets, download an object you know, and sign in with an access key
    other than the root key (this proves the master key is right).
@@ -266,23 +265,31 @@ helm install ts oci://ghcr.io/tainguyen1501/charts/timestore --version 0.1.0 -n 
 ```
 
 Without `rootCredentials.existingSecret` the reinstall generates a new root secret; the data, the other access keys
-and their secrets come back with the volume (or with `masterKey.existingSecret`).
+and their secrets come back with the volume, as long as the master key is the same (`masterKey.existingSecret` or
+`masterKey.value`).
 
 ## Before you upgrade
 
 Take a backup before you start a new TimeStore version. Schema migrations run automatically at startup and only
 forward: the backup is how you go back.
 
-## Keep the master key apart
+## The master key
 
-By default `master.key` sits in the data directory, so every backup of the data also carries the key that decrypts
-the access-key secrets in it. For production, move the key out of the data directory and back it up separately:
+The master key encrypts the secrets of stored access keys (not the objects). It is configuration, like the root key
+pair, and TimeStore never creates one: without it the server does not start.
 
 ```bash
-# Kubernetes secret, Docker secret or a file only the service user can read
-TimeStore__MasterKeyFile=/run/secrets/timestore-master-key
+openssl rand -base64 32                                   # create it once
+TimeStore__MasterKey=<the 44 characters>                  # a value, or
+TimeStore__MasterKeyFile=/run/secrets/timestore-master-key # a file: Kubernetes Secret, Docker secret (Base64 or 32 raw bytes)
 ```
 
-The key is 32 random bytes; TimeStore creates it at the first start if the file does not exist, and refuses to start
-if the file exists with another length. Store the copy where the data backups are not (a password manager or a
-secrets vault).
+- Set one of the two, not both. The server refuses a key that is not 32 bytes, and a key that does not decrypt the
+  stored access keys ("the master key does not decrypt N of M stored access keys"): it never starts with a new key
+  that would leave them unusable.
+- Keep a copy where the data backups are not (a password manager, a secrets vault). Backups never hold it.
+- Losing it loses no data: the objects restore without it, and the access keys other than the root key pair must be
+  created again.
+- **Upgrading from a version that created `<data>/master.key`:** move that file out of the data directory and set
+  `MasterKeyFile` to it, or set `MasterKey` to `base64 < master.key`. Until then the server refuses to start and names
+  the file.

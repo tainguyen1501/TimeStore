@@ -38,6 +38,11 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- default (printf "%s-root" (include "timestore.fullname" .)) .Values.rootCredentials.existingSecret }}
 {{- end }}
 
+{{/* The Secret holding the master key: the user's, or the chart's own (masterKey.value). */}}
+{{- define "timestore.masterKeySecretName" -}}
+{{- default (printf "%s-master-key" (include "timestore.fullname" .)) .Values.masterKey.existingSecret }}
+{{- end }}
+
 {{/* S3:PublicUrl: the configured value, else the S3 ingress address. */}}
 {{- define "timestore.publicUrl" -}}
 {{- if .Values.config.publicUrl }}

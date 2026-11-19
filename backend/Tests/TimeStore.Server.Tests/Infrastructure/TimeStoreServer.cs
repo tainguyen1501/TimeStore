@@ -18,6 +18,9 @@ public class TimeStoreServer : IAsyncLifetime
     public const string AccessKey = "e2e-root";
     public const string SecretKey = "e2e-root-secret";
     public const string Region = "us-east-1";
+
+    /// <summary>The master key of every test server (TimeStore:MasterKey); restored servers use it too.</summary>
+    public const string MasterKey = "rcl5mquvNDEx/4XcpzzShFGMKqFKWfP4EM8QMBC66jw=";
     private const string BinaryVariable = "TIMESTORE_SERVER_BINARY";
     private static readonly TimeSpan StartTimeout = TimeSpan.FromSeconds(30);
     private const int StartAttempts = 5;
@@ -176,6 +179,7 @@ public class TimeStoreServer : IAsyncLifetime
         start.Environment["TimeStore__DataPath"] = _dataPath;
         start.Environment["TimeStore__S3__RootAccessKey"] = AccessKey;
         start.Environment["TimeStore__S3__RootSecretKey"] = SecretKey;
+        start.Environment["TimeStore__MasterKey"] = MasterKey;
         start.Environment["TimeStore__S3__Region"] = Region;
         start.Environment["TimeStore__Blobs__DeleteDelaySeconds"] = BlobDeleteDelaySeconds.ToString();
         Configure(start.Environment);
@@ -201,6 +205,7 @@ public class TimeStoreServer : IAsyncLifetime
         }
 
         _process?.Dispose();
+        _process = null; // a second dispose has nothing left to stop
         if (Directory.Exists(_dataPath))
             Directory.Delete(_dataPath, recursive: true);
     }
@@ -236,7 +241,12 @@ public class TimeStoreServer : IAsyncLifetime
         while (DateTime.UtcNow < deadline)
         {
             if (_process!.HasExited)
+            {
+                // The output is read asynchronously: wait for its last lines (WaitForExit without a timeout does), or
+                // the message may miss why the server stopped.
+                _process.WaitForExit();
                 throw new InvalidOperationException($"The server exited with code {_process.ExitCode}:\n{Output()}");
+            }
             try
             {
                 if ((await http.GetAsync($"{AdminUrl}/health/live")).StatusCode == HttpStatusCode.OK)

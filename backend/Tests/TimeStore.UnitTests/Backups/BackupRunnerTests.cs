@@ -71,24 +71,6 @@ public sealed class BackupRunnerTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Run_WithTheMasterKey_ArchivesIt_AndRestoreWritesItPrivately()
-    {
-        var keyPath = Path.Combine(_root, "master.key");
-        await File.WriteAllBytesAsync(keyPath, [1, 2, 3, 4], _ct);
-        var runner = Runner(new FakeMetadataSnapshots([await BlobAsync("x")]), masterKeyPath: keyPath);
-        var run = await QueueAsync(includeMasterKey: true);
-
-        var execution = await runner.RunAsync(run.Id, _target, _ct);
-
-        var restoredKey = Path.Combine(_root, "keys", "restored.key");
-        var result = await Restore(_target.Archives[execution!.Run.ArchiveName!], Path.Combine(_root, "restored"), restoredKey);
-        Assert.True(result.Value.MasterKeyRestored);
-        Assert.Equal([1, 2, 3, 4], await File.ReadAllBytesAsync(restoredKey, _ct));
-        if (!OperatingSystem.IsWindows())
-            Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, File.GetUnixFileMode(restoredKey));
-    }
-
-    [Fact]
     public async Task Run_WithAMissingBlob_Fails_AndCommitsNothing()
     {
         var gone = await BlobAsync("gone");
@@ -192,10 +174,10 @@ public sealed class BackupRunnerTests : IAsyncLifetime
     public async Task Recover_InterruptsRunningAndQueuedStreams_ReturnsQueuedStoredRunsOldestFirst()
     {
         var now = DateTime.UtcNow;
-        var running = BackupRun.Queue(BackupTriggers.Manual, BackupTargetTypes.Directory, BackupCompressions.Zstd, false, "root", now)
+        var running = BackupRun.Queue(BackupTriggers.Manual, BackupTargetTypes.Directory, BackupCompressions.Zstd, "root", now)
             with { Status = BackupStatus.Running };
-        var stream = BackupRun.Queue(BackupTriggers.Api, BackupTargetTypes.Stream, BackupCompressions.Zstd, false, "root", now);
-        var queued = BackupRun.Queue(BackupTriggers.Manual, BackupTargetTypes.Directory, BackupCompressions.Zstd, false, "root", now);
+        var stream = BackupRun.Queue(BackupTriggers.Api, BackupTargetTypes.Stream, BackupCompressions.Zstd, "root", now);
+        var queued = BackupRun.Queue(BackupTriggers.Manual, BackupTargetTypes.Directory, BackupCompressions.Zstd, "root", now);
         foreach (var run in new[] { running, stream, queued })
             _runs.Seed(run);
 
@@ -210,16 +192,16 @@ public sealed class BackupRunnerTests : IAsyncLifetime
 
     // --- Helpers ---------------------------------------------------------------------------------------------------
 
-    private BackupRunner Runner(FakeMetadataSnapshots snapshots, long minFreeBytes = 0, string? masterKeyPath = null) =>
-        new(_runs, snapshots, _blobs, _deletions, _format, [_target], Options(minFreeBytes, masterKeyPath), TimeProvider.System);
+    private BackupRunner Runner(FakeMetadataSnapshots snapshots, long minFreeBytes = 0) =>
+        new(_runs, snapshots, _blobs, _deletions, _format, [_target], Options(minFreeBytes), TimeProvider.System);
 
-    private BackupOptions Options(long minFreeBytes = 0, string? masterKeyPath = null) => new(
-        "node-1", DataPath, Path.Combine(DataPath, "tmp"), masterKeyPath ?? Path.Combine(_root, "none.key"),
+    private BackupOptions Options(long minFreeBytes = 0) => new(
+        "node-1", DataPath, Path.Combine(DataPath, "tmp"),
         BackupCompressions.Zstd, 3, minFreeBytes);
 
-    private async Task<BackupRun> QueueAsync(bool includeMasterKey = false)
+    private async Task<BackupRun> QueueAsync()
     {
-        var run = BackupRun.Queue(BackupTriggers.Manual, BackupTargetTypes.Directory, BackupCompressions.Zstd, includeMasterKey, "root", DateTime.UtcNow);
+        var run = BackupRun.Queue(BackupTriggers.Manual, BackupTargetTypes.Directory, BackupCompressions.Zstd, "root", DateTime.UtcNow);
         Assert.True(await _runs.TryCreateBackupRunAsync(run, _ct));
         return run;
     }
@@ -235,11 +217,11 @@ public sealed class BackupRunnerTests : IAsyncLifetime
         return copy.ToArray();
     }
 
-    private async Task<Primitives.Result<RestoreSummary>> Restore(byte[] archive, string dataPath, string? masterKeyPath = null)
+    private async Task<Primitives.Result<RestoreSummary>> Restore(byte[] archive, string dataPath)
     {
         var file = Path.Combine(_root, $"{Guid.NewGuid():N}.tar.zst");
         await File.WriteAllBytesAsync(file, archive, _ct);
         return await new BackupRestorer(_format).RestoreAsync(
-            new RestoreRequest(file, dataPath, masterKeyPath ?? Path.Combine(dataPath, "master.key"), 10), _ct);
+            new RestoreRequest(file, dataPath, 10), _ct);
     }
 }

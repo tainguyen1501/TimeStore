@@ -29,6 +29,7 @@ spec:
         # Secret: a generated secret is random on every `helm template` (Argo CD, TimeOps), which would restart the
         # pod on every sync.
         checksum/root: {{ printf "%s|%s|%s" .Values.rootCredentials.existingSecret .Values.rootCredentials.accessKey .Values.rootCredentials.secretKey | sha256sum }}
+        checksum/master-key: {{ printf "%s|%s|%s" .Values.masterKey.existingSecret .Values.masterKey.key .Values.masterKey.value | sha256sum }}
         {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -57,8 +58,6 @@ spec:
             - {{ .Values.restore.archive | quote }}
             - --data-path
             - /data
-            - --master-key
-            - /data/master.key
             - --if-empty
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
@@ -118,10 +117,8 @@ spec:
               value: {{ include "timestore.secureCookies" . | quote }}
             - name: TimeStore__Admin__SessionHours
               value: {{ .Values.config.sessionHours | quote }}
-            {{- if .Values.masterKey.existingSecret }}
             - name: TimeStore__MasterKeyFile
               value: /secrets/master-key/{{ .Values.masterKey.key }}
-            {{- end }}
             - name: TimeStore__Backup__Compression
               value: {{ .Values.backup.compression | quote }}
             - name: TimeStore__Backup__CompressionLevel
@@ -159,11 +156,9 @@ spec:
               mountPath: /data
             - name: tmp
               mountPath: /tmp
-            {{- if .Values.masterKey.existingSecret }}
             - name: master-key
               mountPath: /secrets/master-key
               readOnly: true
-            {{- end }}
             {{- if .Values.backup.existingClaim }}
             - name: backups
               mountPath: /backups
@@ -171,12 +166,10 @@ spec:
       volumes:
         - name: tmp
           emptyDir: {}
-        {{- if .Values.masterKey.existingSecret }}
         - name: master-key
           secret:
-            secretName: {{ .Values.masterKey.existingSecret }}
+            secretName: {{ include "timestore.masterKeySecretName" . }}
             defaultMode: 0400
-        {{- end }}
         {{- if .Values.backup.existingClaim }}
         - name: backups
           persistentVolumeClaim:

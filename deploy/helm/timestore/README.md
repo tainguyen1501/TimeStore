@@ -7,11 +7,14 @@ StatefulSet makes sure two pods never write the same volume.
 ## Install
 
 ```bash
+openssl rand -base64 32 > timestore-master.key   # once: the master key, keep a copy outside the cluster
 helm install timestore oci://ghcr.io/tainguyen1501/charts/timestore --version 0.1.0 \
-  --namespace storage --create-namespace
+  --namespace storage --create-namespace --set masterKey.value="$(cat timestore-master.key)"
 ```
 
-Requires Kubernetes 1.25+ and Helm 3.8+ (OCI charts). After the install, Helm prints how to read the generated root
+The master key (32 bytes as Base64) encrypts the stored access-key secrets and is required: the chart refuses to
+render without `masterKey.value` or `masterKey.existingSecret`, and TimeStore never creates one. Requires Kubernetes
+1.25+ and Helm 3.8+ (OCI charts). After the install, Helm prints how to read the generated root
 key pair and how to reach the S3 API and the admin UI. Check the installation with `helm test timestore -n storage`:
 it creates a bucket, writes, reads and deletes an object through the S3 service.
 
@@ -24,7 +27,7 @@ From a clone of the repository: `helm install timestore ./deploy/helm/timestore 
 rootCredentials:
   existingSecret: timestore-root        # keys: accessKey, secretKey
 masterKey:
-  existingSecret: timestore-master-key  # key: master.key (32 bytes)
+  existingSecret: timestore-master-key  # key: master.key (Base64, from openssl rand -base64 32)
 persistence:
   storageClass: local-path              # local or block storage, never NFS or SMB
   size: 500Gi
@@ -45,9 +48,9 @@ ingress:
 ```bash
 kubectl -n storage create secret generic timestore-root \
   --from-literal=accessKey=admin --from-literal=secretKey="$(openssl rand -base64 30)"
-head -c 32 /dev/urandom > master.key
-kubectl -n storage create secret generic timestore-master-key --from-file=master.key
-# keep a copy of master.key outside the cluster: see docs/backup.md
+kubectl -n storage create secret generic timestore-master-key \
+  --from-literal=master.key="$(openssl rand -base64 32)"
+# keep a copy of the key outside the cluster (docs/backup.md, "The master key")
 helm install timestore oci://ghcr.io/tainguyen1501/charts/timestore --version 0.1.0 -n storage -f values-prod.yaml
 ```
 
@@ -61,7 +64,8 @@ work from outside. With TLS on the admin ingress, the session cookie is marked `
 | `image.repository` / `image.tag` | `ghcr.io/tainguyen1501/timestore` / appVersion | Container image |
 | `rootCredentials.existingSecret` | `""` | Secret with the root key pair (`accessKeyKey`, `secretKeyKey` name its keys) |
 | `rootCredentials.accessKey` / `secretKey` | `admin` / `""` | Used without `existingSecret`; an empty `secretKey` is generated (32 characters), kept across upgrades, new after a reinstall |
-| `masterKey.existingSecret` / `key` | `""` / `master.key` | Secret with the 32-byte master key; without it the key is created inside the data volume |
+| `masterKey.value` | `""` | **Required unless `existingSecret`**: the master key as Base64 (`openssl rand -base64 32`), kept in a Secret of the chart. From TimeOps: `${{ secrets.TIMESTORE_MASTER_KEY }}` |
+| `masterKey.existingSecret` / `key` | `""` / `master.key` | A Secret you manage with the master key (Base64, or the 32 raw bytes of an earlier `master.key`) |
 | `config.region` | `us-east-1` | `S3:Region` |
 | `config.publicUrl` | `""` | `S3:PublicUrl`; empty: from `ingress.s3` |
 | `config.domains` | `[]` | `S3:Domains`, for virtual-host addressing |
@@ -153,8 +157,8 @@ restore:
   across restarts and upgrades. Remove it once the server runs on the restored data.
 - A restore cut half way (the pod killed) starts over at the next start; the server never starts on a half-restored
   volume.
-- The master key goes to `/data/master.key` when the archive holds it (an admin key asked for it). With
-  `masterKey.existingSecret` the server keeps using the Secret's key, and the archive does not need one.
+- Archives never hold the master key: the restored server uses `masterKey`, which must be the key the access keys
+  were encrypted with (another key: the server refuses to start and says so).
 - Watch it with `kubectl -n storage logs ts-timestore-0 -c restore`: **all checksums verified**, or why it refused (then
   the pod stays in `Init:Error`; fix the value and apply again).
 
@@ -239,6 +243,16 @@ kubectl -n storage exec timestore-restore -- /app/TimeStore.Server restore --arc
 kubectl -n storage delete pod timestore-restore
 ```
 
-**Master key:** an archive holds it only when the backup asked for it (`includeMasterKey=true`). With
-`masterKey.existingSecret`, keep that Secret and restore an archive without the key. With neither, the server creates
-a new key and the access keys stored before stop working (the root key pair still works).
+**Master key:** archives never hold it; keep `masterKey` the same. An archive of an earlier version may hold one:
+the restore writes it to `/data/master.key` and says so; put that key into `masterKey` (a Secret or `masterKey.value`).
+
+**Upgrading from a chart version without a required master key:** the key is `/data/master.key` in the data volume.
+Read it from the running pod **before** the upgrade (the new version does not start without the key), give it to the
+chart, upgrade, then remove the old file so volume backups no longer carry it:
+
+```bash
+kubectl -n storage exec ts-timestore-0 -- base64 -w0 /data/master.key > timestore-master.key   # keep a copy
+helm upgrade ts oci://ghcr.io/tainguyen1501/charts/timestore -n storage --reuse-values \
+  --set masterKey.value="$(cat timestore-master.key)"
+kubectl -n storage exec ts-timestore-0 -- rm /data/master.key
+```

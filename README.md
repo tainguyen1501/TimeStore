@@ -54,7 +54,8 @@ disk before TimeStore answers, and the server idles at 40–70 MiB of memory.
 - AWS Signature Version 4 for headers and presigned URLs, with constant-time comparisons and a clock-skew limit.
 - Anonymous requests are refused unless a **bucket policy** allows them; access keys can be limited to what bucket
   policies grant.
-- Secret keys are stored **encrypted** (AES-GCM, with a master key you keep apart from the data) and shown only once.
+- Secret keys are stored **encrypted** (AES-GCM, with a master key you provide and keep apart from the data) and shown
+  only once.
 - The admin port binds to **loopback by default**. Sign-in uses server-side sessions (only a hash of the token is
   stored), `HttpOnly` + `SameSite=Strict` cookies, same-origin checks and throttling of failed attempts.
 - Uploaded content is never rendered as a page on the admin origin (strict CSP, sandboxed downloads, `nosniff`).
@@ -72,13 +73,18 @@ disk before TimeStore answers, and the server idles at 40–70 MiB of memory.
 With Docker (images for amd64 and arm64):
 
 ```bash
+openssl rand -base64 32 > timestore-master.key   # once: the master key, keep a copy with your other secrets
 docker run -d --name timestore \
   -p 9000:9000 -p 127.0.0.1:9001:9001 \
   -v timestore-data:/data \
   -e TimeStore__S3__RootAccessKey=admin \
   -e TimeStore__S3__RootSecretKey=change-me-please \
+  -e TimeStore__MasterKey="$(cat timestore-master.key)" \
   ghcr.io/tainguyen1501/timestore:latest
 ```
+
+The master key encrypts the stored access-key secrets and is required: TimeStore never creates one. A start with
+another key is refused, and without it every access key must be created again (the data stays readable).
 
 - S3 API: `http://localhost:9000`, region `us-east-1`
 - Admin UI: `http://localhost:9001`, sign in with the root key pair above
@@ -97,15 +103,16 @@ Without Docker, download the archive for your platform (Linux x64 or arm64, macO
 
 ```bash
 tar -xzf timestore-*-linux-x64.tar.gz && cd timestore-*-linux-x64
+openssl rand -base64 32 > ~/timestore-master.key && chmod 600 ~/timestore-master.key   # once; keep a copy
 TimeStore__S3__RootAccessKey=admin TimeStore__S3__RootSecretKey=change-me-please \
-TimeStore__DataPath=./data ./TimeStore.Server
+TimeStore__MasterKeyFile=~/timestore-master.key TimeStore__DataPath=./data ./TimeStore.Server
 ```
 
 The macOS binary is not notarized yet: run `xattr -dr com.apple.quarantine .` in its folder before the first start.
 
-Before you store anything that matters: keep the admin port on loopback or behind a TLS proxy, and back up
-`master.key` from the data directory separately from the data, because stored access keys cannot be decrypted
-without it ([backup and restore](docs/backup.md)). All settings: [docs/configuration.md](docs/configuration.md).
+Before you store anything that matters: keep the admin port on loopback or behind a TLS proxy, and keep a copy of the
+master key apart from the data, because stored access keys cannot be decrypted without it
+([backup and restore](docs/backup.md)). All settings: [docs/configuration.md](docs/configuration.md).
 
 ### Kubernetes (Helm)
 

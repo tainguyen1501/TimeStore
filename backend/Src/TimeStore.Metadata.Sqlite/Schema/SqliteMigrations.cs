@@ -313,7 +313,13 @@ internal static class SqliteMigrations
             WHERE status IN ('queued', 'running');
         """;
 
+    // The master key is configuration (TimeStore:MasterKey or MasterKeyFile), never part of an archive: runs no longer
+    // record whether they include it.
+    private const string V11BackupRunsWithoutMasterKey = """
+        ALTER TABLE backup_runs DROP COLUMN include_master_key;
+        """;
+
     public static readonly string[] All =
         [V1Buckets, V2Objects, V3AccessKeys, V4Multipart, V5AdminSessions, V6BucketUsage, V7Versioning, V8Lifecycle, V9BucketPolicies,
-            V10BackupRuns];
+            V10BackupRuns, V11BackupRunsWithoutMasterKey];
 }

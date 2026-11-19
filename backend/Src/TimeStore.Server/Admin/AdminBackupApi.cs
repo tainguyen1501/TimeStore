@@ -96,12 +96,11 @@ internal static class AdminBackupApi
     /// takes a truncated archive for a whole one (the archive also ends with <c>blobs.sha256</c>).
     /// </summary>
     private static async Task<IResult> StreamAsync(
-        IBackupService service, ILogger<BackupWorker> logger, HttpContext http, [FromQuery] string? compression = null,
-        [FromQuery] bool includeMasterKey = false)
+        IBackupService service, ILogger<BackupWorker> logger, HttpContext http, [FromQuery] string? compression = null)
     {
         var principal = http.Principal();
         var target = new HttpBackupTarget(http.Response);
-        var (result, exception) = await service.StreamAsync(compression, includeMasterKey, CallerOf(http), target, http.RequestAborted);
+        var (result, exception) = await service.StreamAsync(compression, CallerOf(http), target, http.RequestAborted);
         if (result.IsSuccess)
         {
             BackupLog.Streamed(logger, result.Value.Id, result.Value.ArchiveName, principal.AccessKeyId, result.Value.ArchiveSize ?? 0);
@@ -121,11 +120,7 @@ internal static class AdminBackupApi
         return TypedResults.Empty;
     }
 
-    private static BackupCaller CallerOf(HttpContext http)
-    {
-        var principal = http.Principal();
-        return new BackupCaller(principal.AccessKeyId, MayIncludeMasterKey: principal.Role == AccessKeyRoles.Admin);
-    }
+    private static BackupCaller CallerOf(HttpContext http) => new(http.Principal().AccessKeyId);
 
     private static string ContentTypeOf(string compression) =>
         compression == BackupCompressions.Zstd ? ZstdContentType : TarContentType;

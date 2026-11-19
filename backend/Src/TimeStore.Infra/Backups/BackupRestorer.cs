@@ -8,14 +8,15 @@ namespace TimeStore.Infra.Backups;
 /// <param name="Archive">The archive to restore (<c>.tar.zst</c> or <c>.tar</c>, detected from its bytes): a file, or an
 /// <c>http(s)://</c> URL read as it downloads (<see cref="ArchiveSource"/>).</param>
 /// <param name="DataPath">The data directory to fill; it must be empty or missing.</param>
-/// <param name="MasterKeyPath">Where the archive's master key goes, when it holds one (never overwritten).</param>
 /// <param name="MaxSchemaVersion">The newest metadata schema this build knows.</param>
 /// <param name="IfEmpty">A data directory that holds data is left alone (a success, nothing read): the restore of an
 /// init container that runs at every start, but restores only into a new, empty volume.</param>
-public sealed record RestoreRequest(string Archive, string DataPath, string MasterKeyPath, int MaxSchemaVersion, bool IfEmpty = false);
+public sealed record RestoreRequest(string Archive, string DataPath, int MaxSchemaVersion, bool IfEmpty = false);
 
 /// <param name="Manifest">What was restored; null when <see cref="RestoreRequest.IfEmpty"/> skipped a directory with data.</param>
-/// <param name="MasterKeyRestored">Whether the archive held the master key (and it was written).</param>
+/// <param name="MasterKeyRestored">Whether the archive held a master key (archives of versions before the key became
+/// configuration): it is written to <c>master.key</c> in the data directory, for the operator to move into the
+/// configuration.</param>
 public sealed record RestoreSummary(BackupManifest? Manifest, string Compression, bool MasterKeyRestored)
 {
     public static readonly RestoreSummary Skipped = new(null, string.Empty, false);
@@ -60,7 +61,7 @@ public sealed class BackupRestorer(IBackupArchiveFormat format)
         if (interrupted)
             Clean(data, createdDirectory: false, masterKeyPath: null); // an earlier restore of this directory was cut
         await File.WriteAllTextAsync(Path.Combine(data.FullName, InProgressMarker), string.Empty, ct);
-        var masterKeyPath = Path.GetFullPath(request.MasterKeyPath);
+        var masterKeyPath = Path.Combine(data.FullName, BackupLayout.MasterKeyEntry);
         var wroteMasterKey = false;
         try
         {
@@ -108,8 +109,6 @@ public sealed class BackupRestorer(IBackupArchiveFormat format)
         if (manifest.SchemaVersion > request.MaxSchemaVersion)
             return BackupErrors.RestoreUnsupported(
                 $"metadata schema {manifest.SchemaVersion} is newer than this build knows ({request.MaxSchemaVersion}); use a newer TimeStore.");
-        if (manifest.IncludesMasterKey && File.Exists(masterKeyPath))
-            return BackupErrors.RestoreMasterKeyExists;
 
         // 2. Entries, each hashed while it is written.
         var hashes = new Dictionary<string, string>(StringComparer.Ordinal);

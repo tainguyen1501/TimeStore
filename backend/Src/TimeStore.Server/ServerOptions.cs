@@ -10,7 +10,8 @@ public sealed class ServerOptions
     public const string DefaultNodeId = "node-1";
     public const string DefaultDataPath = "data";
     public const string MetadataFileName = "metadata.db";
-    public const string MasterKeyFileName = "master.key";
+    /// <summary>The key file earlier versions created inside the data directory (named in the upgrade hint).</summary>
+    public const string LegacyMasterKeyFileName = "master.key";
     public const int DefaultS3Port = 9000;
     public const int DefaultAdminPort = 9001;
 
@@ -24,14 +25,14 @@ public sealed class ServerOptions
     public string DataPath { get; set; } = DefaultDataPath;
 
     /// <summary>
-    /// The master key that encrypts stored secrets (access keys). Default: <c>master.key</c> in <see cref="DataPath"/>,
-    /// created on first start with owner-only permissions. Point it elsewhere (a mounted secret) to keep the key apart
-    /// from the data it protects. Losing it makes every stored access key unusable.
+    /// The master key that encrypts stored access-key secrets (not objects): 32 bytes as Base64
+    /// (<c>openssl rand -base64 32</c>). Required, this or <see cref="MasterKeyFile"/>; TimeStore never creates one.
+    /// Keep a copy apart from the data: without it every stored access key must be created again.
     /// </summary>
-    public string? MasterKeyFile { get; set; }
+    public string? MasterKey { get; set; }
 
-    /// <summary>The master key file actually used.</summary>
-    public string MasterKeyPath => string.IsNullOrWhiteSpace(MasterKeyFile) ? Path.Combine(DataPath, MasterKeyFileName) : MasterKeyFile;
+    /// <summary>A file holding the master key (Base64, or the 32 raw bytes): a mounted Secret, a Docker secret.</summary>
+    public string? MasterKeyFile { get; set; }
 
     /// <summary>S3 API (hot path, own dispatcher), on every interface.</summary>
     public int S3Port { get; set; } = DefaultS3Port;
@@ -87,11 +88,32 @@ public sealed class ServerOptions
             return $"{Section}:{nameof(NodeId)} must be 1-{BlobLocator.NodeIdMaxLength} lowercase letters, digits or hyphens.";
         if (string.IsNullOrWhiteSpace(DataPath))
             return $"{Section}:{nameof(DataPath)} is required.";
+        if (MasterKeyProblem() is { } keyProblem)
+            return keyProblem;
         if (S3Port == AdminPort)
             return $"{Section}:{nameof(S3Port)} and {Section}:{nameof(AdminPort)} must differ.";
         if (!IPAddress.TryParse(AdminAddress, out _))
             return $"{Section}:{nameof(AdminAddress)} must be an IP address.";
         return null;
+    }
+
+    private string? MasterKeyProblem()
+    {
+        var hasValue = !string.IsNullOrWhiteSpace(MasterKey);
+        var hasFile = !string.IsNullOrWhiteSpace(MasterKeyFile);
+        if (hasValue && hasFile)
+            return $"set {Section}:{nameof(MasterKey)} or {Section}:{nameof(MasterKeyFile)}, not both.";
+        if (hasValue || hasFile)
+            return null;
+
+        var problem = $"{Section}:{nameof(MasterKey)} (or {Section}:{nameof(MasterKeyFile)}) is required: "
+            + "32 bytes as Base64, created with: openssl rand -base64 32.";
+        var legacy = Path.Combine(DataPath, LegacyMasterKeyFileName);
+        return File.Exists(legacy)
+            ? problem + $" The data directory holds {LegacyMasterKeyFileName} from an earlier version: move it out of the "
+                + $"data directory and set {Section}:{nameof(MasterKeyFile)} to it, or set {Section}:{nameof(MasterKey)} to "
+                + $"its Base64 (base64 < {legacy})."
+            : problem;
     }
 
     private static bool IsValidNodeId(string? nodeId)

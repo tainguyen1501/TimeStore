@@ -20,7 +20,6 @@ public sealed partial class SqliteMetadataStore : IBackupRunStore
             command.Parameters.AddText(BackupSql.Trigger, run.Trigger);
             command.Parameters.AddText(BackupSql.TargetType, run.TargetType);
             command.Parameters.AddText(BackupSql.Compression, run.Compression);
-            command.Parameters.AddInt64(BackupSql.IncludeMasterKey, run.IncludeMasterKey ? 1 : 0);
             command.Parameters.AddText(BackupSql.StartedBy, run.StartedBy);
             command.Parameters.AddInt64(BackupSql.QueuedAt, SqliteTime.ToUnixMs(run.QueuedAt));
             try
@@ -150,18 +149,17 @@ public sealed partial class SqliteMetadataStore : IBackupRunStore
         reader.GetString(2),
         reader.GetString(3),
         reader.GetString(4),
-        reader.GetInt64(5) != 0,
-        reader.GetString(6),
-        SqliteTime.FromUnixMs(reader.GetInt64(7)),
+        reader.GetString(5),
+        SqliteTime.FromUnixMs(reader.GetInt64(6)),
+        NullableTime(reader, 7),
         NullableTime(reader, 8),
         NullableTime(reader, 9),
-        NullableTime(reader, 10),
-        new BackupProgress(reader.GetInt64(11), reader.GetInt64(12), reader.GetInt64(13), reader.GetInt64(14)),
-        reader.IsDBNull(15) ? null : reader.GetString(15),
-        reader.IsDBNull(16) ? null : reader.GetInt64(16),
+        new BackupProgress(reader.GetInt64(10), reader.GetInt64(11), reader.GetInt64(12), reader.GetInt64(13)),
+        reader.IsDBNull(14) ? null : reader.GetString(14),
+        reader.IsDBNull(15) ? null : reader.GetInt64(15),
+        reader.IsDBNull(16) ? null : reader.GetString(16),
         reader.IsDBNull(17) ? null : reader.GetString(17),
-        reader.IsDBNull(18) ? null : reader.GetString(18),
-        reader.IsDBNull(19) ? null : reader.GetString(19));
+        reader.IsDBNull(18) ? null : reader.GetString(18));
 
     private static DateTime? NullableTime(SqliteDataReader reader, int ordinal) =>
         reader.IsDBNull(ordinal) ? null : SqliteTime.FromUnixMs(reader.GetInt64(ordinal));
@@ -173,7 +171,6 @@ public sealed partial class SqliteMetadataStore : IBackupRunStore
         public const string Trigger = "$trigger";
         public const string TargetType = "$targetType";
         public const string Compression = "$compression";
-        public const string IncludeMasterKey = "$includeMasterKey";
         public const string StartedBy = "$startedBy";
         public const string QueuedAt = "$queuedAt";
         public const string StartedAt = "$startedAt";
@@ -191,15 +188,15 @@ public sealed partial class SqliteMetadataStore : IBackupRunStore
         public const string Limit = "$limit";
 
         private const string Columns = """
-            id, status, trigger_type, target_type, compression, include_master_key, started_by, queued_at, started_at,
+            id, status, trigger_type, target_type, compression, started_by, queued_at, started_at,
             finished_at, snapshot_at, blobs_total, blobs_done, bytes_total, bytes_done, archive_name, archive_size,
             archive_sha256, error_code, error_message
             """;
 
         public const string Insert = """
-            INSERT INTO backup_runs (id, status, trigger_type, target_type, compression, include_master_key, started_by,
+            INSERT INTO backup_runs (id, status, trigger_type, target_type, compression, started_by,
                 queued_at, blobs_total, blobs_done, bytes_total, bytes_done)
-            VALUES ($id, $status, $trigger, $targetType, $compression, $includeMasterKey, $startedBy, $queuedAt, 0, 0, 0, 0);
+            VALUES ($id, $status, $trigger, $targetType, $compression, $startedBy, $queuedAt, 0, 0, 0, 0);
             """;
 
         public const string Find = "SELECT " + Columns + " FROM backup_runs WHERE id = $id;";

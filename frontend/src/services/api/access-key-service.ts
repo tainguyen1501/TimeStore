@@ -17,7 +17,7 @@ export const ROLE_INFO: Record<AccessKeyRole, { label: string; description: stri
   backup: {
     label: "Backup",
     description:
-      "For backup programs: the backup API with signed requests (curl --aws-sigv4, AWS SDKs); no admin UI, never the master key.",
+      "For backup programs: the backup API with signed requests (curl --aws-sigv4, AWS SDKs); no admin UI.",
   },
 }
 

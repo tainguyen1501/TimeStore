@@ -23,14 +23,17 @@ rootCredentials:
   accessKey: admin
   secretKey: ""
 
-# The 32-byte key that encrypts stored access-key secrets. Without a Secret here, TimeStore creates it inside the data
-# volume on first start, so every volume backup also carries the key. For production, create it once and keep a copy
-# apart from the data (docs/backup.md):
-#   head -c 32 /dev/urandom > master.key
-#   kubectl create secret generic timestore-master-key --from-file=master.key
+# Required. The 32-byte key that encrypts stored access-key secrets (not objects); TimeStore never creates one. Create
+# it once and keep a copy apart from the cluster: without it every access key must be created again (docs/backup.md).
+#   openssl rand -base64 32
 masterKey:
+  # A Secret you manage, holding the key under `key` (Base64, or the 32 raw bytes of an earlier master.key):
+  #   kubectl create secret generic timestore-master-key --from-literal=master.key="$(openssl rand -base64 32)"
   existingSecret: ""
   key: master.key
+  # Used when existingSecret is empty: the key as Base64; the chart keeps it in a Secret of its own. From TimeOps:
+  # ${{ secrets.TIMESTORE_MASTER_KEY }} (a workspace secret, never in Git).
+  value: ""
 
 config:
   # S3:Region: the region clients sign with.

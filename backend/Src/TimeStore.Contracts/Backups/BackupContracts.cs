@@ -3,9 +3,7 @@ namespace TimeStore.Contracts.Backups;
 /// <summary>Starts a backup.</summary>
 /// <param name="Target">Where the archive goes: <c>directory</c> (the default; <c>TimeStore:Backup:Path</c>).</param>
 /// <param name="Compression"><c>zstd</c> or <c>none</c>; the server's default (<c>TimeStore:Backup:Compression</c>) when null.</param>
-/// <param name="IncludeMasterKey">Put the master key in the archive (off by default: the archive alone then cannot
-/// decrypt access-key secrets).</param>
-public sealed record StartBackupRequest(string? Target = null, string? Compression = null, bool IncludeMasterKey = false);
+public sealed record StartBackupRequest(string? Target = null, string? Compression = null);
 
 /// <summary>One backup run.</summary>
 /// <param name="Status"><see cref="BackupRunStatuses"/>.</param>
@@ -21,7 +19,6 @@ public sealed record BackupRunResponse(
     string Trigger,
     string Target,
     string Compression,
-    bool IncludeMasterKey,
     string StartedBy,
     DateTime QueuedAt,
     DateTime? StartedAt,

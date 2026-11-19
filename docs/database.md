@@ -117,7 +117,8 @@ and deletes the upload (and, by cascade, these rows) in one transaction.
 v9 adds `s3_scope` (TEXT, default `full`; `policy`: S3 access only where a bucket policy allows it, step 6d).
 
 `STRICT`. The root key from configuration is not stored here (break-glass). The master key that decrypts
-`secret_ciphertext` lives outside the database (`master.key`); a database copy without it holds no usable secret.
+`secret_ciphertext` is configuration (`TimeStore:MasterKey` or `MasterKeyFile`), never stored with the data; a
+database copy without it holds no usable secret.
 
 ### `bucket_usage` (v6)
 
@@ -180,7 +181,7 @@ always sorts after the key's newest (`VersionOrder.Next`). Writes read `buckets.
 `STRICT`. Parsed policies are cached per bucket name in memory (`BucketPolicyCache`) and dropped on PUT, DELETE and
 bucket deletion.
 
-### `backup_runs` (v10)
+### `backup_runs` (v10; v11 drops `include_master_key`)
 
 | Column | Type | Notes |
 |---|---|---|
@@ -188,7 +189,6 @@ bucket deletion.
 | `status` | TEXT | `queued`, `running`, `succeeded`, `failed`, `cancelled`, `interrupted` (CHECK) |
 | `trigger_type` | TEXT | `manual`, `api`, `schedule` |
 | `target_type`, `compression` | TEXT | `directory` \| `stream`; `zstd` \| `none` |
-| `include_master_key` | INTEGER | Whether the archive carries `master.key` |
 | `started_by` | TEXT | Access key that started it |
 | `queued_at`, `started_at`, `finished_at` | INTEGER | Unix ms UTC |
 | `snapshot_at` | INTEGER | Instant T of the metadata snapshot |

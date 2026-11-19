@@ -44,7 +44,7 @@ Always:
 
 - Keep at least one copy **off the machine** (another provider or region) and one that cannot be overwritten from
   TimeStore's side (a versioned bucket, or object lock at the destination).
-- Keep the **master key** apart from the data (`MasterKeyFile`; [backup.md](backup.md#keep-the-master-key-apart)).
+- Keep a copy of the **master key** apart from the data (`MasterKey` or `MasterKeyFile`; [backup.md](backup.md#the-master-key)).
 - **Practice a restore** now and then (a side-by-side restore leaves the running server alone).
 
 ## Backups

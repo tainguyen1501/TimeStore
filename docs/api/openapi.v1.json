@@ -2569,14 +2569,6 @@
             "schema": {
               "type": "string"
             }
-          },
-          {
-            "name": "includeMasterKey",
-            "in": "query",
-            "schema": {
-              "type": "boolean",
-              "default": false
-            }
           }
         ],
         "responses": {
@@ -2855,7 +2847,6 @@
           "trigger",
           "target",
           "compression",
-          "includeMasterKey",
           "startedBy",
           "queuedAt",
           "startedAt",
@@ -2888,9 +2879,6 @@
           },
           "compression": {
             "type": "string"
-          },
-          "includeMasterKey": {
-            "type": "boolean"
           },
           "startedBy": {
             "type": "string"
@@ -4031,10 +4019,6 @@
               "null",
               "string"
             ]
-          },
-          "includeMasterKey": {
-            "type": "boolean",
-            "default": false
           }
         }
       },

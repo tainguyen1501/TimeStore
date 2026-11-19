@@ -65,6 +65,6 @@ public sealed class AccessKeyApiTests(TimeStoreServer server) : IClassFixture<Ti
             (await _admin.PostAsync($"{Keys}/{TimeStoreServer.AccessKey}/disable", null, _ct)).StatusCode);
 
     [Fact]
-    public async Task MasterKeyFile_IsCreatedInTheDataDirectory() =>
-        Assert.True(File.Exists(Path.Combine(server.DataPath, "master.key")));
+    public void TheMasterKey_IsConfiguration_NeverWrittenToTheDataDirectory() =>
+        Assert.False(File.Exists(Path.Combine(server.DataPath, "master.key")));
 }
