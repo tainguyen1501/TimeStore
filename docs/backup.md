@@ -1,5 +1,8 @@
 # Backup and restore
 
+Backups are one of four ways to protect TimeStore's data; [data-protection.md](data-protection.md) compares them and
+says which to use for your size.
+
 Everything TimeStore stores lives in one data directory, plus a master key and the configuration. The
 [built-in backup](#built-in-backup-the-server-keeps-running) archives a running server consistently; a file-level copy
 must see the directory at one instant: copying it file by file while the server is writing can produce a backup that

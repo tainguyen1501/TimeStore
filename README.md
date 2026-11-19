@@ -45,6 +45,9 @@ disk before TimeStore answers, and the server idles at 40–70 MiB of memory.
 - Overwrites and deletes never change data in place; replaced blobs stay readable for reads in flight, and leftovers
   of interrupted writes are swept automatically.
 - Checksums (`Content-MD5`, CRC32, CRC32C, CRC64NVME, SHA-1, SHA-256) are verified on upload and stored.
+- **Online backups** to one verified archive (metadata and data at one instant, no downtime) and an offline restore
+  command; versioning; mirroring with rclone today and bucket replication planned
+  ([data protection](docs/data-protection.md)).
 
 **Security**
 
@@ -144,7 +147,7 @@ TimeStore listens on two ports, so admin traffic never shares the S3 path:
 | Multipart | Create, upload part, upload part copy, complete (composite and full-object checksums), abort, list parts and uploads, GET/HEAD by `partNumber` |
 | Versioning | Enabled and suspended buckets, delete markers; restore older versions in the admin UI |
 | Lifecycle | Expiration of current and noncurrent versions, expired delete markers, incomplete multipart uploads |
-| Not yet | Multi-node replication, server-side encryption, object lock, object tags, storage-class transitions, IAM users and groups |
+| Not yet | Multi-node, bucket replication ([planned](docs/data-protection.md)), server-side encryption, object lock, object tags, storage-class transitions, IAM users and groups |
 
 Every change is tested end to end with the AWS SDK for .NET, against the regular build and the Native AOT binary.
 An opt-in suite also runs the AWS CLI, rclone, s3cmd, 200 tests of [ceph s3-tests](https://github.com/ceph/s3-tests)
@@ -231,7 +234,9 @@ conventions: [CONTRIBUTING.md](CONTRIBUTING.md).
 ## Documentation
 
 - [Configuration](docs/configuration.md): every setting, running behind a reverse proxy
-- [Backup and restore](docs/backup.md): what to back up, consistent copies, restoring, the master key
+- [Data protection](docs/data-protection.md): backups, versioning, mirroring, replication; which to use for your size
+- [Backup and restore](docs/backup.md): online backups, restore, file-level copies, the master key
+- [Mirroring](docs/mirroring.md): copy buckets to another storage with rclone, as a Kubernetes CronJob
 - [User guide](docs/user-guide/README.md): the admin UI (also built into the UI)
 - [Architecture](docs/architecture.md): layers, storage model, write path, multi-node plan
 - [Performance](docs/performance.md): how to benchmark, baselines and comparisons

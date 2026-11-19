@@ -16,6 +16,30 @@ Status legend: ✅ done · 🚧 in progress · ⏳ planned · ⏸ deferred.
 | 7 | Admin UI | ✅ 7a ✅ (sign-in), 7b ✅ (OpenAPI + generated types, UI embedded and served on the admin port), 7c ✅ (access keys page, LRU signing-key cache), 7d ✅ (object browser), 7e ✅ (metrics), 7f ✅ (preview, S3 URL with public state, share links), 7g ✅ (Make public / private for a bucket or folder), 7h ✅ (virtualized object list, scroll loading, name filter), 7i ✅ (redesign: three-column shell, borderless tonal style, list / grid / table views, preview window, Guide and Settings pages) (`docs/research/admin-ui.md`) | 7a sign-in page, guard, session expiry, user menu, viewer read-only UI; 7b OpenAPI document + generated types, serve the build from the Server (static files + SPA fallback); 7c access keys page; 7d object browser; 7e metrics; 7f object preview and links; 7g make public; 7h large folders; 7i redesign |
 | 8 | Scale-out | ⏸ deferred; phases 6 and 7 are done; start when the maintainers decide | Sharded SQLite, Postgres provider, `IPlacement` + replication (model 2), node membership, rebalancing. Erasure coding is not in phase 8: replicas first, EC for cold data later (Backlog) |
 
+## Data protection
+
+Overview for users: [data-protection.md](data-protection.md). Four mechanisms; backups and replication have their own
+stages.
+
+| Mechanism | Stage | Status | Content |
+|---|---|---|---|
+| Versioning | (phase 6a) | ✅ | Versions and delete markers; restore an older version in the admin UI; lifecycle expires old versions |
+| Mirroring | — | ✅ documented | No TimeStore code: `rclone sync` / `copy` to any storage, as a CronJob ([mirroring.md](mirroring.md)) |
+| Backups | B1 | ✅ | Point-in-time archive (tar + Zstandard), blob hold, `backup_runs`, targets `stream` and `directory`, admin API, `restore` command, Helm backups claim and restore manifests ([research/backup.md](research/backup.md)) |
+| | B1.1 | ⏳ next | Restore from a URL or S3 (`restore --archive https://…`), `--if-empty`, and a declarative `restore.archive` in the Helm chart (an init container): a restore becomes Values → Plan → Apply on TimeOps |
+| | B2 | ⏳ | Backups page in the admin UI |
+| | B3 | ⏳ | Schedules and retention |
+| | B4 | ⏳ | `s3` target: archives sent to another S3 endpoint while they are written |
+| | B5 | ⏳ | Incremental backups (blobs never change: each archive holds the metadata and only new blobs) |
+| | B6 | ⏳ | Archive encryption |
+| Replication | R1 | ⏳ | Per-bucket rules to one S3 destination, outbox in the commit's transaction, worker (coalescing, retries, checksum check) ([research/replication.md](research/replication.md)) |
+| | R2 | ⏳ | Existing objects (backfill), `x-amz-replication-status`, admin UI page, metrics |
+| | R3 | ⏳ | Versioned buckets (every version), S3 `PutBucketReplication` API |
+| | R4 | ⏳ | Two-way / site replication between TimeStore servers |
+
+Order to decide: B1.1 first (restore is what matters); then replication R1 or backups B3/B4, depending on whether
+busy servers (replication) or small ones (scheduled archives) come first.
+
 ## Phase 1 approach
 
 Research before code: for routing, SigV4, `aws-chunked` and XML/errors, read the AWS spec; write
