@@ -108,9 +108,8 @@ builder.Services.AddSingleton(new BlobDeletionOptions(options.Blobs.DeleteDelay)
 builder.Services.AddSingleton(new StorageMetricsOptions(options.DataPath));
 builder.Services.AddSingleton(new BackupOptions(
     options.NodeId, options.DataPath, Path.Combine(options.DataPath, FileSystemBlobStore.TempDirectory),
-    options.Backup.Compression, options.Backup.CompressionLevel, options.Backup.MinFreeBytes));
-if (options.Backup.HasDirectory)
-    builder.Services.AddDirectoryBackupTarget(new DirectoryBackupOptions(options.Backup.Path!));
+    options.Backup.Compression, options.Backup.CompressionLevel, options.Backup.MinFreeBytes, options.Backup.Keep));
+builder.Services.AddDirectoryBackupTarget(new DirectoryBackupOptions(options.Backup.DirectoryPath(options.DataPath)));
 builder.Services.AddHostedService<BackupWorker>();
 builder.Services.AddSingleton<S3RequestMetrics>();
 builder.Services.AddSingleton<MetricsSampler>();

@@ -152,8 +152,8 @@ jobs:
             --set 'ingress.s3.enabled=true,ingress.s3.host=s3.example.org,ingress.s3.tlsSecret=s3-tls' \
             --set 'ingress.admin.enabled=true,ingress.admin.tlsSecret=admin-tls' \
             --set 'rootCredentials.existingSecret=root,masterKey.existingSecret=master-key,config.domains[0]=s3.example.org' \
-            --set 'backup.existingClaim=timestore-backups,backup.compression=none,backup.minFreeBytes=10737418240' \
-            --set 'restore.archive=/backups/t/timestore-node-1-20261119T050809Z.tar.zst' \
+            --set 'backup.keep=3,backup.compression=none,backup.minFreeBytes=10737418240' \
+            --set-string 'restore.archive=https://archives.example.org/timestore-node-1-20261119T050809Z.tar.zst' \
             > "$RUNNER_TEMP/render/full.yaml"
           helm template t deploy/helm/timestore --kube-version 1.31.0 --set persistence.enabled=false --set "$KEY" \
             > "$RUNNER_TEMP/render/ephemeral.yaml"

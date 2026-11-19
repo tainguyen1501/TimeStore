@@ -78,17 +78,25 @@ data, back up to a directory (`POST /api/v1/backups` answers at once and the ser
 time limit), restore from there, and copy archives off the machine from that directory. A signature is checked when a
 request starts, so a download that runs for hours is fine.
 
-### Back up to a directory
+### Back up to the backup folder
 
-Set `TimeStore:Backup:Path` to a directory **outside** the data directory: a second disk, a mounted share or a backup
-volume (a copy on the same disk does not survive the disk). Then start a backup from the admin API; the server's
-backup worker writes `<name>.partial` and renames it when the archive is complete.
+Start a backup from the admin API; the server's backup worker writes the archive to `<DataPath>/backups`
+(`TimeStore:Backup:Path` moves it), as `<name>.partial` renamed when complete. The folder is readable by the server's
+user only. It is where archives are **taken from**, not where they are kept: it sits on the data disk, so it does not
+survive the disk. Download the archive, keep it elsewhere, then delete it:
 
 ```bash
 curl -s "${SIGN[@]}" -H 'Content-Type: application/json' -d '{}' "$ADMIN/api/v1/backups"
 curl -s "${SIGN[@]}" "$ADMIN/api/v1/backups"                         # status, progress, archiveName, archiveSha256
-curl -fsS "${SIGN[@]}" -OJ "$ADMIN/api/v1/backups/<id>/archive"       # download it later
+curl -fsS "${SIGN[@]}" -OJ "$ADMIN/api/v1/backups/<id>/archive"       # take it
+curl -s "${SIGN[@]}" -X DELETE "$ADMIN/api/v1/backups/<id>/archive"   # free the space (the run stays in the history)
 ```
+
+Only the newest `Backup:Keep` archives stay (default 1): after a backup succeeds, older ones are deleted. While a
+backup runs, the disk needs room for the data plus an archive as large (uncompressed, the worst case): a backup that
+cannot fit is refused before it writes anything (`BACKUP_LOW_DISK_SPACE`). The archive never holds the backup folder
+(a backup copies the metadata and the blobs it references, nothing else); tools that copy the whole data directory
+(restic, Kopia, rsync after a stop) can skip `backups/`.
 
 One backup runs at a time. A backup that is running when the server stops (or crashes) is marked `interrupted` and is
 not started again: start a new one. What it left (the `.partial` file, its snapshot in `<DataPath>/tmp/`) is removed at
@@ -129,8 +137,9 @@ set `MasterKey` to `base64 < master.key`.
 The archive also opens with ordinary tools: `tar --zstd -xf <archive>` gives a data directory, and
 `sha256sum -c blobs.sha256` inside it checks it.
 
-On Kubernetes, set `restore.archive` in the chart's values: an empty data claim is restored before the server starts,
-a claim with data is left alone. The Helm chart's README has the steps (a new cluster, in place, side by side) and the
+On Kubernetes, set `restore.archive` in the chart's values to the archive's URL (it must come from outside the data
+volume, which a restore starts empty): an empty data claim is restored before the server starts, a claim with data is
+left alone. The Helm chart's README has the steps (a new cluster, in place, side by side) and the
 manual way with a Job
 ([deploy/helm/timestore/README.md](../deploy/helm/timestore/README.md)).
 

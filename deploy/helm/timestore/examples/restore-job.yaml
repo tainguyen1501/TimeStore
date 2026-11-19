@@ -1,4 +1,5 @@
-# Restores a backup archive from the backups claim into an empty data claim (chart README, "Restore a backup").
+# Restores a backup archive, read from an http(s) URL as it downloads (a presigned S3 or R2 URL, any web server), into
+# an empty data claim (chart README, "Restore a backup"). Without a running release; with one, restore.archive is simpler.
 # Run it while no TimeStore pod uses the data claim. Change the three marked values, then:
 #   kubectl -n <namespace> apply -f restore-job.yaml
 #   until kubectl -n <namespace> get job timestore-restore -o jsonpath='{.status.conditions[*].type}' \
@@ -28,7 +29,7 @@ spec:
           args:
             - restore
             - --archive
-            - /backups/ts/timestore-node-1-20261118T020000Z.tar.zst # CHANGE: /backups/<release>/<archiveName>
+            - https://example.r2.cloudflarestorage.com/backups/timestore-node-1-20261118T020000Z.tar.zst # CHANGE: the archive's URL
             - --data-path
             - /data
           env:
@@ -43,13 +44,11 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /data
-            - name: backups
-              mountPath: /backups
-              readOnly: true
+            - name: tmp
+              mountPath: /tmp
       volumes:
         - name: data
           persistentVolumeClaim:
             claimName: data-ts-timestore-0 # CHANGE: data-<release>-timestore-0, created empty (data-claim.yaml)
-        - name: backups
-          persistentVolumeClaim:
-            claimName: timestore-backups # the chart's backup.existingClaim
+        - name: tmp
+          emptyDir: {}

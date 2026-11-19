@@ -16,6 +16,7 @@ public interface IBackupTarget
 /// <summary>A target that keeps archives, so they can be listed, downloaded, restored and deleted.</summary>
 public interface IBackupArchiveStore : IBackupTarget
 {
+    /// <summary>Every complete archive, newest first.</summary>
     ValueTask<IReadOnlyList<StoredBackupArchive>> ListAsync(CancellationToken ct);
 
     /// <summary>Null when no archive has that name.</summary>
@@ -23,6 +24,9 @@ public interface IBackupArchiveStore : IBackupTarget
 
     /// <summary>False when no archive has that name.</summary>
     ValueTask<bool> DeleteAsync(string archiveName, CancellationToken ct);
+
+    /// <summary>Free space where archives are written, in bytes; null when it cannot be measured.</summary>
+    long? AvailableBytes();
 
     /// <summary>
     /// Startup: removes what uploads left behind when the process died mid-backup (an upload disposed normally

@@ -50,6 +50,18 @@ internal static class AdminBackupApi
         backups.MapGet(Archive, DownloadAsync)
             .Produces(StatusCodes.Status200OK, contentType: ZstdContentType, additionalContentTypes: [TarContentType])
             .Errors(401, 403, 404);
+        backups.MapDelete(Archive, DeleteArchiveAsync).Errors(401, 403, 404);
+    }
+
+    /// <summary>Frees the space of an archive once it is taken (the run stays in the history).</summary>
+    private static async Task<Results<NoContent, JsonHttpResult<ErrorResponse>>> DeleteArchiveAsync(
+        Guid id, IBackupService service, ILogger<BackupWorker> logger, HttpContext http, CancellationToken ct)
+    {
+        var result = await service.DeleteArchiveAsync(id, ct);
+        if (result.IsFailure)
+            return ApiResults.Error(result.Error, http);
+        BackupLog.ArchiveDeleted(logger, id, http.Principal().AccessKeyId);
+        return TypedResults.NoContent();
     }
 
     private static async Task<Results<Accepted<BackupRunResponse>, JsonHttpResult<ErrorResponse>>> StartAsync(

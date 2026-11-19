@@ -1,4 +1,5 @@
 using TimeStore.Application.Features.Backups;
+using TimeStore.Blob.FileSystem;
 using TimeStore.Domain.Backups;
 
 namespace TimeStore.Server;
@@ -8,11 +9,20 @@ public sealed class BackupSettings
 {
     public const string Section = ServerOptions.Section + ":Backup";
 
+    /// <summary>The folder of the data directory that holds archives when <see cref="Path"/> is not set.</summary>
+    public const string DefaultFolder = "backups";
+    public const int DefaultKeep = BackupOptions.DefaultKeep;
+    public const int MaxKeep = 100;
+
     /// <summary>
-    /// Directory for the <c>directory</c> target: archives started from the admin API are written here. Outside the
-    /// data directory (a second volume or a share). Unset: only streamed backups (<c>GET /api/v1/backups/stream</c>).
+    /// Where backups started from the admin API write their archives (the <c>directory</c> target). Unset:
+    /// <c>&lt;DataPath&gt;/backups</c>, on the data volume. It is a place to take archives from (download them, later
+    /// send them on), not a place to keep them: only <see cref="Keep"/> archives stay.
     /// </summary>
     public string? Path { get; set; }
+
+    /// <summary>How many archives the directory keeps: after a backup succeeds, older ones are deleted (1-100).</summary>
+    public int Keep { get; set; } = DefaultKeep;
 
     /// <summary>Default compression: <c>zstd</c> (a <c>.tar.zst</c>) or <c>none</c> (a plain <c>.tar</c>).</summary>
     public string Compression { get; set; } = BackupCompressions.Zstd;
@@ -26,7 +36,9 @@ public sealed class BackupSettings
     /// </summary>
     public long MinFreeBytes { get; set; } = BackupOptions.DefaultMinFreeBytes;
 
-    public bool HasDirectory => !string.IsNullOrWhiteSpace(Path);
+    /// <summary>The archive directory actually used.</summary>
+    public string DirectoryPath(string dataPath) =>
+        string.IsNullOrWhiteSpace(Path) ? System.IO.Path.Combine(dataPath, DefaultFolder) : Path;
 
     public string? Validate(string dataPath)
     {
@@ -36,8 +48,17 @@ public sealed class BackupSettings
             return $"{Section}:{nameof(CompressionLevel)} must be {BackupOptions.MinCompressionLevel}-{BackupOptions.MaxCompressionLevel}.";
         if (MinFreeBytes < 0)
             return $"{Section}:{nameof(MinFreeBytes)} must be 0 or more.";
-        if (HasDirectory && IsSameOrInside(Path!, dataPath))
-            return $"{Section}:{nameof(Path)} must be outside the data directory (a copy on the same disk does not survive it).";
+        if (Keep is < 1 or > MaxKeep)
+            return $"{Section}:{nameof(Keep)} must be 1-{MaxKeep}.";
+        var directory = DirectoryPath(dataPath);
+        if (IsSameOrInside(dataPath, directory)
+            || IsSameOrInside(directory, System.IO.Path.Combine(dataPath, FileSystemBlobStore.BlobsDirectory))
+            || IsSameOrInside(directory, System.IO.Path.Combine(dataPath, FileSystemBlobStore.TempDirectory)))
+        {
+            return $"{Section}:{nameof(Path)} must be a folder of its own: not the data directory, a folder holding it, "
+                + $"nor its {FileSystemBlobStore.BlobsDirectory}/ or {FileSystemBlobStore.TempDirectory}/ (default: <DataPath>/{DefaultFolder}).";
+        }
+
         return null;
     }
 

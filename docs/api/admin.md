@@ -187,6 +187,7 @@ access key with the `backup` or `admin` role; reads included, since an archive i
 | GET | `/api/v1/backups/{id}` | — | `200 BackupRunResponse` | 404 `BACKUP_NOT_FOUND` |
 | POST | `/api/v1/backups/{id}/cancel` | — | `200 BackupRunResponse` (queued: cancelled at once; running: stops at its next blob, poll for the end) | 404, 409 `BACKUP_NOT_ACTIVE` |
 | GET | `/api/v1/backups/{id}/archive` | — | `200` the archive (`application/zstd` or `application/x-tar`, `Content-Disposition: attachment`, `no-store`) | 404 `BACKUP_NOT_FOUND`, `BACKUP_ARCHIVE_NOT_FOUND` |
+| DELETE | `/api/v1/backups/{id}/archive` | — | `204` the archive is deleted from the backup folder; the run stays | 404 `BACKUP_NOT_FOUND`, `BACKUP_ARCHIVE_NOT_FOUND` |
 | GET | `/api/v1/backups/stream?compression=` | — | `200` the archive, written while the backup runs; nothing is kept on the server | 400 `BACKUP_INVALID_COMPRESSION`, 409 `BACKUP_ACTIVE` |
 
 `BackupRunResponse`: `{ "id", "status", "trigger", "target", "compression", "startedBy",
@@ -195,14 +196,14 @@ access key with the `backup` or `admin` role; reads included, since an archive i
 
 - **Status:** `queued` → `running` → `succeeded` | `failed` | `cancelled` | `interrupted` (the server stopped or the
   streaming client disconnected; never re-run automatically). At most one run is queued or running.
-- **Trigger:** `manual` (POST), `api` (stream), `schedule` (later). **Target:** `directory` (`TimeStore:Backup:Path`)
+- **Trigger:** `manual` (POST), `api` (stream), `schedule` (later). **Target:** `directory` (`TimeStore:Backup:Path`, default `<DataPath>/backups`; the newest `Backup:Keep` archives stay)
   or `stream`.
 - **Progress** (`blobsDone`, `bytesDone`) is written every 2 s; `snapshotAt` is instant T, what the archive holds.
 - **Stream:** refusals are JSON before the first byte. A failure after it cuts the connection, so a client never
   receives a truncated archive as a whole one (and a restore checks `blobs.sha256`, the last entry, anyway).
 - `errorCode` of a run that did not succeed: `BACKUP_BLOB_MISSING`, `BACKUP_BLOB_CORRUPT` (a blob does not match its
-  stored MD5 or size), `BACKUP_LOW_DISK_SPACE` (`Backup:MinFreeBytes`), `BACKUP_CANCELLED`, `BACKUP_INTERRUPTED`,
-  `BACKUP_TARGET_NOT_CONFIGURED` (queued before a restart that removed `Backup:Path`), `BACKUP_FAILED` (details in
+  stored MD5 or size), `BACKUP_LOW_DISK_SPACE` (`Backup:MinFreeBytes`, or no room for an archive as large as the data), `BACKUP_CANCELLED`, `BACKUP_INTERRUPTED`,
+  `BACKUP_TARGET_NOT_CONFIGURED` (the run's target is not available after a restart), `BACKUP_FAILED` (details in
   the server log).
 - Every start, cancel, download and outcome is logged with the access key, never data or keys.
 

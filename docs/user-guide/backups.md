@@ -46,18 +46,21 @@ curl -fsS "${SIGN[@]}" -OJ "$ADMIN/api/v1/backups/stream"
 
 You get `timestore-node-1-<date>T<time>Z.tar.zst` in the current folder. `-f` makes `curl` fail if the backup fails
 half way, so a partial file is never taken for a complete one. With a lot of data (many GB, millions of objects),
-prefer the server's backup folder below: it does not depend on a long download through a proxy.
+prefer the server's backup folder below: the backup does not depend on a long download through a proxy.
 
-**Or let the server write it to its backup folder** (it must have one: the `Backup:Path` setting, see "Settings"
-below), and check on it:
+**Or let the server write it to its backup folder** (`backups/` in the data folder), then take it:
 
 ```bash
 curl -s "${SIGN[@]}" -H 'Content-Type: application/json' -d '{}' "$ADMIN/api/v1/backups"
 curl -s "${SIGN[@]}" "$ADMIN/api/v1/backups"
+curl -fsS "${SIGN[@]}" -OJ "$ADMIN/api/v1/backups/<id>/archive"
+curl -s "${SIGN[@]}" -X DELETE "$ADMIN/api/v1/backups/<id>/archive"
 ```
 
 The first answer says `"status":"queued"`; a little later (a few seconds per GB on a fast disk) the list shows
-`"status":"succeeded"` with the `archiveName`, the number of objects copied and the `archiveSha256` of the file.
+`"status":"succeeded"` with the `id`, the `archiveName`, the number of objects copied and the `archiveSha256` of the
+file. The backup folder is on the same disk as the data, so it is not a safe place to keep backups: download the
+file, store it somewhere else, then delete it from the server. The server keeps only the newest one anyway.
 Download it later with `curl -fsS "${SIGN[@]}" -OJ "$ADMIN/api/v1/backups/<id>/archive"`.
 
 Copy the file somewhere other than the server's disk (another machine, a cloud bucket): a copy on the same disk does
@@ -110,9 +113,10 @@ Set by whoever runs the server (`appsettings.json`, or environment variables `Ti
 
 | Setting | Default | Meaning |
 |---|---|---|
-| `Backup:Path` | not set | The folder for backups started with `POST /api/v1/backups`, outside the data folder. Without it only downloads (step 3, first command) work |
+| `Backup:Path` | `backups/` in the data folder | Where backups started with `POST /api/v1/backups` are written, to be downloaded. Usually left as is; set it to put archives on another disk |
+| `Backup:Keep` | 1 | How many archives stay in that folder; older ones are deleted after a new backup |
 | `Backup:Compression` | `zstd` | `zstd` (`.tar.zst`) or `none` (`.tar`). Photos, videos and zip files do not compress: with mostly such data, `none` saves CPU and the file is the same size |
-| `Backup:MinFreeBytes` | 1 GiB | A backup does not start with less free space on the data disk |
+| `Backup:MinFreeBytes` | 1 GiB | A backup does not start with less free space on the data disk (it also needs room for an archive as large as the data) |
 
 ## When something goes wrong
 
@@ -122,6 +126,6 @@ Set by whoever runs the server (`appsettings.json`, or environment variables `Ti
 | `S3_AUTH_SIGNATURE_MISMATCH` | Wrong secret, or a region other than the server's |
 | `S3_AUTH_INVALID_ACCESS_KEY` | Unknown or disabled key |
 | `AUTH_FORBIDDEN` | The key's role is not Backup or Admin |
-| `BACKUP_TARGET_NOT_CONFIGURED` | The server has no backup folder: download instead, or set `Backup:Path` |
+| `BACKUP_LOW_DISK_SPACE` | Not enough free space for the archive: free some, or download and delete the archive kept from last time |
 | `BACKUP_ACTIVE` | A backup is already running; wait for it |
 | `zsh: no matches found` | zsh read a comment as part of the command: paste without the `#` comments |

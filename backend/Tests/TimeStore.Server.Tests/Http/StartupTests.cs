@@ -25,6 +25,19 @@ public sealed class StartupTests
         Assert.Contains("TimeStore cannot start: TimeStore:S3:RootSecretKey is required", failure);
     }
 
+    [Theory]
+    [InlineData("")]        // the data directory itself
+    [InlineData("blobs")]   // where object data lives
+    [InlineData("tmp/b")]   // inside the scratch folder emptied at startup
+    public async Task ABackupDirectory_ThatIsNotAFolderOfItsOwn_IsRefused(string inData)
+    {
+        // The fixture's own data directory is in its environment already (Configure runs last).
+        var failure = await StartFailsAsync(new ConfiguredServer(environment =>
+            environment["TimeStore__Backup__Path"] = Path.Combine(environment["TimeStore__DataPath"]!, inData)));
+
+        Assert.Contains("TimeStore:Backup:Path must be a folder of its own", failure);
+    }
+
     [Fact]
     public async Task WithoutAMasterKey_TheServerDoesNotStart_AndCreatesNone()
     {

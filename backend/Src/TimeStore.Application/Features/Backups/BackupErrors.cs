@@ -54,6 +54,11 @@ public static class BackupErrors
     public static AppError LowDiskSpace(long freeBytes, long minFreeBytes) => AppError.Conflict(Codes.LowDiskSpace,
         $"Only {freeBytes} bytes are free in the data directory; a backup needs at least {minFreeBytes} (TimeStore:Backup:MinFreeBytes).");
 
+    /// <summary>The archive directory cannot take an archive as large as the data (uncompressed, the worst case).</summary>
+    public static AppError LowArchiveSpace(long freeBytes, long neededBytes) => AppError.Conflict(Codes.LowDiskSpace,
+        $"Only {freeBytes} bytes are free in the backup directory; this backup needs up to {neededBytes} (the data plus "
+        + "TimeStore:Backup:MinFreeBytes). Free space, download and delete older archives, or lower TimeStore:Backup:Keep.");
+
     public static AppError BlobMissing(Guid blobId) =>
         AppError.Internal(Codes.BlobMissing, $"Blob {blobId:N} referenced by the metadata is missing from the data directory.");
 

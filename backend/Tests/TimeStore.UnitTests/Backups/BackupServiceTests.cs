@@ -103,6 +103,24 @@ public sealed class BackupServiceTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task DeleteArchive_FreesTheFile_AndKeepsTheRun()
+    {
+        var service = Service();
+        var run = (await service.StartAsync(new StartBackupRequest(), Admin, _ct)).Value;
+        Assert.Equal(BackupErrors.Codes.ArchiveNotFound, (await service.DeleteArchiveAsync(run.Id, _ct)).Error.Code); // not run yet
+        await _runner.RunQueuedAsync(run.Id, _ct);
+
+        var deleted = await service.DeleteArchiveAsync(run.Id, _ct);
+
+        Assert.True(deleted.IsSuccess);
+        Assert.Empty(_directory.Archives);
+        Assert.Equal(BackupRunStatuses.Succeeded, (await service.GetAsync(run.Id, _ct)).Value.Status);
+        Assert.Equal(BackupErrors.Codes.ArchiveNotFound, (await service.DeleteArchiveAsync(run.Id, _ct)).Error.Code);
+        Assert.Equal(BackupErrors.Codes.ArchiveNotFound, (await service.OpenArchiveAsync(run.Id, _ct)).Error.Code);
+        Assert.Equal(BackupErrors.Codes.NotFound, (await service.DeleteArchiveAsync(Guid.CreateVersion7(), _ct)).Error.Code);
+    }
+
+    [Fact]
     public async Task Stream_RunsInline_IntoTheGivenTarget()
     {
         var target = new MemoryBackupTarget(BackupTargetTypes.Stream);

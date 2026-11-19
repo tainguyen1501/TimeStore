@@ -77,4 +77,7 @@ internal static partial class BackupLog
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Backup archive of run {RunId} ({ArchiveName}) downloaded by {AccessKeyId}")]
     public static partial void Downloaded(ILogger logger, Guid runId, string archiveName, string accessKeyId);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Backup archive of run {RunId} deleted by {AccessKeyId}")]
+    public static partial void ArchiveDeleted(ILogger logger, Guid runId, string accessKeyId);
 }

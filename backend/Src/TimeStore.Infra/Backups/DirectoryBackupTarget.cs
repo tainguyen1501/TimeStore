@@ -3,18 +3,21 @@ using TimeStore.Domain.Backups;
 
 namespace TimeStore.Infra.Backups;
 
-/// <param name="Path">Directory that receives the archives (outside the data directory: a second volume or a share).</param>
+/// <param name="Path">Directory that receives the archives (default <c>&lt;DataPath&gt;/backups</c>).</param>
 public sealed record DirectoryBackupOptions(string Path);
 
 /// <summary>
 /// Archives as plain files in one directory. An archive is written as <c>&lt;name&gt;.partial</c> and renamed when
-/// complete, so a listed archive is always whole; a run that fails or is cancelled leaves nothing behind.
+/// complete, so a listed archive is always whole; a run that fails or is cancelled leaves nothing behind. The
+/// directory and the archives are readable by the server's user only: an archive holds all the data.
 /// </summary>
 public sealed class DirectoryBackupTarget(DirectoryBackupOptions options) : IBackupArchiveStore
 {
     public const string PartialExtension = ".partial";
     private const string PartialPattern = "*" + PartialExtension;
     private const int BufferSize = 1 << 20;
+    private const UnixFileMode OwnerOnlyDirectory = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute;
+    private const UnixFileMode OwnerOnlyFile = UnixFileMode.UserRead | UnixFileMode.UserWrite;
 
     private static readonly string[] ArchiveExtensions = [TarBackupArchiveFormat.ZstdExtension, TarBackupArchiveFormat.TarExtension];
 
@@ -23,16 +26,19 @@ public sealed class DirectoryBackupTarget(DirectoryBackupOptions options) : IBac
     public ValueTask<IBackupUpload> OpenWriteAsync(string archiveName, CancellationToken ct)
     {
         var final = PathOf(archiveName);
-        Directory.CreateDirectory(options.Path);
+        CreateDirectory();
         var partial = final + PartialExtension;
-        var stream = new FileStream(partial, new FileStreamOptions
+        var create = new FileStreamOptions
         {
             Mode = FileMode.CreateNew,
             Access = FileAccess.Write,
             Share = FileShare.None,
             Options = FileOptions.Asynchronous | FileOptions.SequentialScan,
             BufferSize = BufferSize,
-        });
+        };
+        if (!OperatingSystem.IsWindows())
+            create.UnixCreateMode = OwnerOnlyFile;
+        var stream = new FileStream(partial, create);
         return ValueTask.FromResult<IBackupUpload>(new Upload(stream, partial, final));
     }
 
@@ -96,6 +102,27 @@ public sealed class DirectoryBackupTarget(DirectoryBackupOptions options) : IBac
             return ValueTask.FromResult(false);
         File.Delete(path);
         return ValueTask.FromResult(true);
+    }
+
+    public long? AvailableBytes()
+    {
+        try
+        {
+            CreateDirectory();
+            return new DriveInfo(Path.GetFullPath(options.Path)).AvailableFreeSpace;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            return null; // not measurable here: writing the archive will tell
+        }
+    }
+
+    private void CreateDirectory()
+    {
+        if (OperatingSystem.IsWindows())
+            Directory.CreateDirectory(options.Path);
+        else if (!Directory.Exists(options.Path))
+            Directory.CreateDirectory(options.Path, OwnerOnlyDirectory);
     }
 
     /// <summary>Only plain archive names map to a path in the directory (never a separator, never "..").</summary>

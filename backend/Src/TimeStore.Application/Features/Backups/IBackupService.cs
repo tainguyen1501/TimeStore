@@ -32,6 +32,9 @@ public interface IBackupService
 
     /// <summary>The archive of a succeeded run kept by a stored target (the caller disposes the stream).</summary>
     ValueTask<Result<BackupArchiveDownload>> OpenArchiveAsync(Guid runId, CancellationToken ct);
+
+    /// <summary>Deletes the archive of a succeeded run from its stored target (the run's row stays).</summary>
+    ValueTask<Result> DeleteArchiveAsync(Guid runId, CancellationToken ct);
 }
 
 public sealed record BackupArchiveDownload(string Name, string Compression, Stream Content);
@@ -80,14 +83,17 @@ public interface IBackupQueue
 /// on disk until it ends).</param>
 /// <param name="DataPath">The data directory (free space is measured there).</param>
 /// <param name="TempPath">Scratch space of a run (its checksum list), emptied of <c>*.tmp</c> files at startup.</param>
+/// <param name="Keep">How many archives a stored target keeps: older ones are deleted after a run succeeds.</param>
 public sealed record BackupOptions(
     string NodeId,
     string DataPath,
     string TempPath,
     string Compression,
     int CompressionLevel,
-    long MinFreeBytes)
+    long MinFreeBytes,
+    int Keep = BackupOptions.DefaultKeep)
 {
+    public const int DefaultKeep = 1;
     public const int DefaultCompressionLevel = 3;
     public const int MinCompressionLevel = 1;
     public const int MaxCompressionLevel = 19;

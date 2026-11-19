@@ -99,6 +99,8 @@ public sealed class BackupRunner(
             : Ended(StatusOf(error), control.Progress, error);
         // The run's own state is recorded even when the caller has gone (CancellationToken.None).
         await runs.TryFinishBackupRunAsync(runId, outcome, CancellationToken.None);
+        if (error is null && target is IBackupArchiveStore store)
+            await KeepNewestAsync(store);
         return await ExecutionAsync(runId, error, exception);
     }
 
@@ -139,6 +141,7 @@ public sealed class BackupRunner(
         await using var snapshot = await snapshots.CreateAsync(run.Id, ct);
         var snapshotAt = clock.UtcNowMs;
         var summary = snapshot.Summary;
+        EnsureArchiveSpace(target, summary.Bytes + summary.DatabaseBytes);
         control.Progress = new BackupProgress(summary.Blobs, 0, summary.Bytes, 0);
         await runs.UpdateBackupProgressAsync(run.Id, snapshotAt, control.Progress, ct);
 
@@ -222,6 +225,36 @@ public sealed class BackupRunner(
                 ? hashes
                 : throw new BackupFailure(BackupErrors.BlobCorrupt(blob.BlobId));
         }
+    }
+
+    /// <summary>
+    /// The directory is where archives are taken from, not where they are kept: after a success only the newest
+    /// <see cref="BackupOptions.Keep"/> stay. A failure to delete one never fails the run that just succeeded.
+    /// </summary>
+    private async ValueTask KeepNewestAsync(IBackupArchiveStore store)
+    {
+        try
+        {
+            foreach (var old in (await store.ListAsync(CancellationToken.None)).Skip(Math.Max(1, options.Keep)))
+                await store.DeleteAsync(old.Name, CancellationToken.None);
+        }
+        catch (IOException)
+        {
+            // Left for the next run (a file still open by a download, a full or read-only disk).
+        }
+        catch (UnauthorizedAccessException)
+        {
+        }
+    }
+
+    /// <summary>An archive is at most as large as the data it holds (plain tar); refuse before writing a byte.</summary>
+    private void EnsureArchiveSpace(IBackupTarget target, long dataBytes)
+    {
+        if (target is not IBackupArchiveStore store || store.AvailableBytes() is not { } free)
+            return;
+        var needed = dataBytes + Math.Max(0, options.MinFreeBytes);
+        if (free < needed)
+            throw new BackupFailure(BackupErrors.LowArchiveSpace(free, needed));
     }
 
     private void EnsureFreeSpace()

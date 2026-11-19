@@ -29,7 +29,8 @@ separator (`TimeStore__DataPath=/data`, `TimeStore__S3__RootSecretKey=...`). Env
 | `S3:RootAccessKey` | — (required) | Root (break-glass) access key id: always valid, not stored, never listed or disabled through the API. Development: `timestore-dev` (`appsettings.Development.json`) |
 | `S3:RootSecretKey` | — (required) | Root secret key, 8–128 characters. Development: `timestore-dev-secret`. Set it through environment variables (`TimeStore__S3__RootSecretKey`), never in a committed file |
 | `S3:MaxClockSkewSeconds` | `900` | Allowed distance (1–3600 s) between a signed request's time and the server clock |
-| `Backup:Path` | — | Directory for backups started from the admin API (`directory` target). Must be outside `DataPath` (a second volume or a share). Unset: only streamed backups ([backup](backup.md)) |
+| `Backup:Path` | `<DataPath>/backups` | Where backups started from the admin API write their archives (`directory` target): a place to take archives from, not to keep them. A folder of its own: not `DataPath`, a folder holding it, nor its `blobs/` or `tmp/` ([backup](backup.md)) |
+| `Backup:Keep` | `1` | Archives kept in that folder (1–100); older ones are deleted after a backup succeeds |
 | `Backup:Compression` | `zstd` | Default compression of an archive: `zstd` (`.tar.zst`) or `none` (`.tar`) |
 | `Backup:CompressionLevel` | `3` | Zstandard level 1–19 (higher: smaller, slower) |
 | `Backup:MinFreeBytes` | `1073741824` | A backup refuses to start with less free space in `DataPath` (blobs released meanwhile stay until it ends); 0 turns the check off |

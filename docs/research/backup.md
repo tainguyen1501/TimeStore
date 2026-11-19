@@ -131,7 +131,7 @@ public interface IBackupArchiveStore : IBackupTarget // destinations that keep a
 | Target | Where the archive lives | Stage |
 |---|---|---|
 | `stream` | Nowhere in TimeStore: written straight into the response of `GET /api/v1/backups/stream` (curl, a Velero pre-hook, TimeOps, a CronJob) | B1 ✅ |
-| `directory` | `Backup:Path`, a directory **outside the data directory**: a second volume or a network share (archives are plain files, unlike the live SQLite database); written as `<name>.partial`, renamed when complete; a crash's `.partial` is removed at the next start | B1 ✅ |
+| `directory` | `Backup:Path`, default `<DataPath>/backups` (since 2026-11-19, section 18; before: a directory outside the data directory); written as `<name>.partial`, renamed when complete; a crash's `.partial` is removed at the next start; the newest `Backup:Keep` stay | B1 ✅ |
 | `s3` | Another S3 endpoint (AWS, Backblaze, another TimeStore…), multipart upload while the archive is written: no local copy | B4 |
 | later | SFTP, Azure Blob, GCS: one class each | — |
 
@@ -276,7 +276,7 @@ runs the end-to-end suite on the linux-x64 AOT binary.
 | Archive from a file or an `http(s)://` URL, read as it downloads; a presigned URL's query never printed | `Infra/Backups/ArchiveSource.cs` |
 | `--if-empty`: a data directory with data is left alone (exit code 0) | `BackupRestorer`, `RestoreCommand` |
 | `.timestore-restore` while a restore writes: an interrupted restore starts over; the server refuses to start on it | `BackupRestorer.InProgressMarker`, `Program.cs` |
-| `restore.archive` in the chart: an init container `restore --if-empty` (data claim, backups claim read-only) | `deploy/helm/timestore/templates/statefulset.yaml` |
+| `restore.archive` in the chart: an init container `restore --if-empty` (data claim) | `deploy/helm/timestore/templates/statefulset.yaml` |
 
 Tests: the restorer skips a directory with data without reading the archive, restores an empty one (a `lost+found`
 kept), starts over after an interrupted restore, leaves no marker after a failure, reads from a URL, refuses an
@@ -307,4 +307,26 @@ S3 identities in its filer as JSON (no encryption of the secrets found).
 | Helm: `masterKey.value` (the chart's Secret) or `masterKey.existingSecret`, required; always mounted as a file | No `lookup`-generated key: `helm template` (TimeOps) would render a new one each time |
 
 Later: key rotation (the ciphertext's key id lets several keys decrypt), a KMS.
+
+## 18. The backup folder moves into the data directory (2026-11-19)
+
+Backups started from the admin API needed `Backup:Path` outside the data directory, which on Kubernetes meant a second
+claim (`backup.existingClaim`) next to the data claim. In practice an archive is not kept where it is made: it is
+taken off the machine (downloaded now, sent to a destination later). Built-in backups of other S3 servers do not
+exist (section 15); products that stage an archive locally before sending it (GitLab's `backup_path`, Barman's local
+staging) keep it on the same machine. A second claim only to hold a file on its way out was not worth it.
+
+| Decision | Why |
+|---|---|
+| `Backup:Path` defaults to `<DataPath>/backups`, always on; any folder of its own works, never the data directory itself, a folder holding it, `blobs/` or `tmp/` | One volume; the archive folder is staging, not storage |
+| `Backup:Keep` (default 1, 1-100): after a run succeeds, older archives are deleted; a failed run deletes none | Disk use is bounded without tracking downloads; the newest archive stays for a second download |
+| `DELETE /api/v1/backups/{id}/archive` (backup or admin key, logged), the run stays in the history | Free the space as soon as the archive is taken |
+| Before writing, the folder must have room for the data plus `MinFreeBytes` (an archive is at most the data, uncompressed); else `BACKUP_LOW_DISK_SPACE` | The archive shares the data disk: never fill it half way |
+| The folder and the archives are readable by the server's user only (0700/0600) | An archive holds all the data |
+| Helm: `backup.existingClaim` and the `/backups` mount removed, `backup.keep` added; `restore.archive` takes an http(s) URL (a restore starts from an empty data volume, where `backups/` is gone) | One claim per release |
+
+Considered and set aside: an `emptyDir` for the archives (gone with the pod, and a restore in place starts by stopping
+it); a claim created by the chart (Uninstall on TimeOps would delete it, and `volumeClaimTemplates` cannot be added
+to an existing StatefulSet); deleting an archive once downloaded (a cut download would leave nothing, and "downloaded"
+is not "stored"). Later: destinations (S3-compatible, B4) that the archive is sent to, then deleted from the folder.
 

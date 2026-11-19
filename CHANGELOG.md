@@ -64,10 +64,18 @@ The first public release, 0.1.0. A single-node, S3-compatible object storage ser
   restore an empty volume before the server starts and never touch one with data.
 - Backup and restore guide: `docs/backup.md`.
 - Helm chart for Kubernetes (`deploy/helm/timestore`, published as `oci://ghcr.io/tainguyen1501/charts/timestore`),
-  with a backups claim (`backup.existingClaim`) and restore steps (a Job, in place or side by side).
+  with backups in the data volume (`backup.keep`) and restores through `restore.archive` (in place, side by side, a
+  new cluster) or the example manifests.
 
 ### Changed
 
+- **Backups go to `<DataPath>/backups` by default** (`TimeStore:Backup:Path` moves them; a folder of its own, never the
+  data directory, `blobs/` or `tmp/`): the folder is where archives are taken from. `TimeStore:Backup:Keep` (default 1)
+  keeps the newest archives and deletes older ones after a backup succeeds; `DELETE /api/v1/backups/{id}/archive`
+  frees an archive once taken; a backup needs room for an archive as large as the data and is refused otherwise.
+  Helm: `backup.existingClaim` and its `/backups` mount are removed (archives are in the data volume), `backup.keep`
+  is new, and `restore.archive` takes an http(s) URL; `examples/backups-claim.yaml` is gone and `restore-job.yaml`
+  reads a URL.
 - **The master key is configuration, required** (`TimeStore:MasterKey` as Base64, or `TimeStore:MasterKeyFile`):
   TimeStore no longer creates `master.key` in the data directory, and a start with a key that does not decrypt the
   stored access keys is refused. Backups never carry the key: `includeMasterKey` and `BACKUP_MASTER_KEY_FORBIDDEN`

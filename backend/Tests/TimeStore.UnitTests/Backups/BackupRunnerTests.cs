@@ -147,6 +147,57 @@ public sealed class BackupRunnerTests : IAsyncLifetime
         Assert.Equal(0, snapshots.Created);
     }
 
+    [Theory]
+    [InlineData(1, 1)]
+    [InlineData(2, 2)]
+    [InlineData(3, 3)]
+    public async Task ASucceededRun_KeepsOnlyTheNewestArchives(int keep, int expected)
+    {
+        _target.Archives["timestore-node-1-20200101T000000Z.tar.zst"] = [1];
+        _target.Archives["timestore-node-1-20200102T000000Z.tar.zst"] = [2];
+        var runner = Runner(new FakeMetadataSnapshots([await BlobAsync("x")]), keep: keep);
+        var run = await QueueAsync();
+
+        var execution = await runner.RunAsync(run.Id, _target, _ct);
+
+        Assert.Equal(expected, _target.Archives.Count);
+        Assert.Contains(execution!.Run.ArchiveName!, _target.Archives.Keys); // the new one always stays
+        if (keep == 2)
+            Assert.Contains("timestore-node-1-20200102T000000Z.tar.zst", _target.Archives.Keys); // then the next newest
+    }
+
+    [Fact]
+    public async Task AFailedRun_DeletesNoArchive()
+    {
+        _target.Archives["timestore-node-1-20200101T000000Z.tar.zst"] = [1];
+        var gone = await BlobAsync("gone");
+        await _blobs.DeleteAsync(gone.BlobId, _ct);
+        var runner = Runner(new FakeMetadataSnapshots([gone]), keep: 1);
+        var run = await QueueAsync();
+
+        var execution = await runner.RunAsync(run.Id, _target, _ct);
+
+        Assert.Equal(BackupStatus.Failed, execution!.Run.Status);
+        Assert.Equal(["timestore-node-1-20200101T000000Z.tar.zst"], _target.Archives.Keys);
+    }
+
+    [Fact]
+    public async Task ARun_ThatTheArchiveDirectoryCannotHold_IsRefused_BeforeWritingAnything()
+    {
+        _target.FreeBytes = 5; // the data is 10 bytes: an archive may be as large
+        var snapshots = new FakeMetadataSnapshots([await BlobAsync("0123456789")]);
+        var runner = Runner(snapshots);
+        var run = await QueueAsync();
+
+        var execution = await runner.RunAsync(run.Id, _target, _ct);
+
+        Assert.Equal((BackupStatus.Failed, BackupErrors.Codes.LowDiskSpace), (execution!.Run.Status, execution.Run.ErrorCode));
+        Assert.Contains("backup directory", execution.Run.ErrorMessage);
+        Assert.Empty(_target.Archives);
+        Assert.Equal(0, _target.Abandoned); // refused before an upload was opened
+        Assert.False(_deletions.IsHeld);
+    }
+
     [Fact]
     public async Task Run_OfARunThatIsNoLongerQueued_DoesNothing()
     {
@@ -192,12 +243,12 @@ public sealed class BackupRunnerTests : IAsyncLifetime
 
     // --- Helpers ---------------------------------------------------------------------------------------------------
 
-    private BackupRunner Runner(FakeMetadataSnapshots snapshots, long minFreeBytes = 0) =>
-        new(_runs, snapshots, _blobs, _deletions, _format, [_target], Options(minFreeBytes), TimeProvider.System);
+    private BackupRunner Runner(FakeMetadataSnapshots snapshots, long minFreeBytes = 0, int keep = BackupOptions.DefaultKeep) =>
+        new(_runs, snapshots, _blobs, _deletions, _format, [_target], Options(minFreeBytes, keep), TimeProvider.System);
 
-    private BackupOptions Options(long minFreeBytes = 0) => new(
+    private BackupOptions Options(long minFreeBytes = 0, int keep = BackupOptions.DefaultKeep) => new(
         "node-1", DataPath, Path.Combine(DataPath, "tmp"),
-        BackupCompressions.Zstd, 3, minFreeBytes);
+        BackupCompressions.Zstd, 3, minFreeBytes, keep);
 
     private async Task<BackupRun> QueueAsync()
     {

@@ -71,11 +71,6 @@ spec:
               mountPath: /data
             - name: tmp
               mountPath: /tmp
-            {{- if .Values.backup.existingClaim }}
-            - name: backups
-              mountPath: /backups
-              readOnly: true
-            {{- end }}
       {{- end }}
       containers:
         - name: timestore
@@ -125,12 +120,8 @@ spec:
               value: {{ .Values.backup.compressionLevel | int | quote }}
             - name: TimeStore__Backup__MinFreeBytes
               value: {{ .Values.backup.minFreeBytes | int64 | quote }}
-            {{- if .Values.backup.existingClaim }}
-            # One folder per release: releases may share a backups claim (each removes the incomplete archives in
-            # its own folder at startup, never another release's).
-            - name: TimeStore__Backup__Path
-              value: /backups/{{ .Release.Name }}
-            {{- end }}
+            - name: TimeStore__Backup__Keep
+              value: {{ .Values.backup.keep | int | quote }}
             # No diagnostics IPC socket: the root file system is read-only.
             - name: DOTNET_EnableDiagnostics
               value: "0"
@@ -159,10 +150,6 @@ spec:
             - name: master-key
               mountPath: /secrets/master-key
               readOnly: true
-            {{- if .Values.backup.existingClaim }}
-            - name: backups
-              mountPath: /backups
-            {{- end }}
       volumes:
         - name: tmp
           emptyDir: {}
@@ -170,11 +157,6 @@ spec:
           secret:
             secretName: {{ include "timestore.masterKeySecretName" . }}
             defaultMode: 0400
-        {{- if .Values.backup.existingClaim }}
-        - name: backups
-          persistentVolumeClaim:
-            claimName: {{ .Values.backup.existingClaim }}
-        {{- end }}
         {{- if not .Values.persistence.enabled }}
         - name: data
           emptyDir: {}

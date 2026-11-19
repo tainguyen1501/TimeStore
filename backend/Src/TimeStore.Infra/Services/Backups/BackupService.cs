@@ -91,5 +91,15 @@ public sealed class BackupService(
         return content is null ? BackupErrors.ArchiveNotFound : new BackupArchiveDownload(run.ArchiveName, run.Compression, content);
     }
 
+    public async ValueTask<Result> DeleteArchiveAsync(Guid runId, CancellationToken ct)
+    {
+        var run = await runs.FindBackupRunAsync(runId, ct);
+        if (run is null)
+            return BackupErrors.NotFound(runId);
+        if (run.Status != BackupStatus.Succeeded || run.ArchiveName is null || Store(run.TargetType) is not { } store)
+            return BackupErrors.ArchiveNotFound;
+        return await store.DeleteAsync(run.ArchiveName, ct) ? Result.Success : BackupErrors.ArchiveNotFound;
+    }
+
     private IBackupArchiveStore? Store(string type) => stores.FirstOrDefault(store => store.Type == type);
 }

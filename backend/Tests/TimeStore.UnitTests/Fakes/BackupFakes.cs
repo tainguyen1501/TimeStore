@@ -159,9 +159,16 @@ internal sealed class MemoryBackupTarget(string type = BackupTargetTypes.Directo
     public ValueTask<IBackupUpload> OpenWriteAsync(string archiveName, CancellationToken ct) =>
         ValueTask.FromResult<IBackupUpload>(new Upload(this, archiveName));
 
+    /// <summary>Free space reported by <see cref="AvailableBytes"/>; null: not measurable.</summary>
+    public long? FreeBytes { get; set; }
+
+    public long? AvailableBytes() => FreeBytes;
+
+    // Newest first, as the directory lists them; archive names carry their instant, so they sort by time.
     public ValueTask<IReadOnlyList<StoredBackupArchive>> ListAsync(CancellationToken ct) =>
         ValueTask.FromResult<IReadOnlyList<StoredBackupArchive>>(
-            Archives.Select(a => new StoredBackupArchive(a.Key, a.Value.Length, DateTime.UnixEpoch)).ToArray());
+            Archives.OrderByDescending(a => a.Key, StringComparer.Ordinal)
+                .Select(a => new StoredBackupArchive(a.Key, a.Value.Length, DateTime.UnixEpoch)).ToArray());
 
     public ValueTask<Stream?> OpenReadAsync(string archiveName, CancellationToken ct) =>
         ValueTask.FromResult<Stream?>(Archives.TryGetValue(archiveName, out var bytes) ? new MemoryStream(bytes, writable: false) : null);
