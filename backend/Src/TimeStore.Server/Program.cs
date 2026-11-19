@@ -28,14 +28,22 @@ var options = builder.Configuration.GetSection(ServerOptions.Section).Get<Server
 if (RestoreCommand.Matches(args))
     return await RestoreCommand.RunAsync(args, options);
 
+// Problems the operator fixes (configuration, data directory): one line and exit code 1, not a crash with a stack trace.
+const int StartupRefused = 1;
 if (options.Validate() is { } problem)
-    throw new InvalidOperationException(problem);
+{
+    await Console.Error.WriteLineAsync($"TimeStore cannot start: {problem}");
+    return StartupRefused;
+}
 
 // A restore was cut half way (a pod killed during the chart's restore init container): never serve partial data.
 if (File.Exists(Path.Combine(options.DataPath, BackupRestorer.InProgressMarker)))
-    throw new InvalidOperationException(
-        $"The data directory {Path.GetFullPath(options.DataPath)} holds an unfinished restore ({BackupRestorer.InProgressMarker}). "
-        + "Run the restore again (it starts over), or empty the directory.");
+{
+    await Console.Error.WriteLineAsync(
+        $"TimeStore cannot start: the data directory {Path.GetFullPath(options.DataPath)} holds an unfinished restore "
+        + $"({BackupRestorer.InProgressMarker}). Run the restore again (it starts over), or empty the directory.");
+    return StartupRefused;
+}
 
 builder.WebHost.ConfigureKestrel(kestrel =>
 {

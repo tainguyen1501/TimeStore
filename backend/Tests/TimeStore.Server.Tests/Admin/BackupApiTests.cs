@@ -465,7 +465,11 @@ public sealed class RestoreCommandTests
 
         var failure = await Assert.ThrowsAsync<InvalidOperationException>(async () => await server.InitializeAsync());
 
+        // One line and exit code 1, not an unhandled exception (exit code 134 and a stack trace).
+        Assert.Contains("exited with code 1:", failure.Message);
+        Assert.Contains("TimeStore cannot start", failure.Message);
         Assert.Contains(".timestore-restore", failure.Message);
+        Assert.DoesNotContain("Unhandled exception", failure.Message);
     }
 
     /// <summary>A data directory as a restore cut half way leaves it: the marker and part of the data.</summary>
