@@ -72,6 +72,13 @@ curl -fsS "${SIGN[@]}" -OJ "$ADMIN/api/v1/backups/stream?compression=none"     #
 If the backup fails after it started, the connection is cut (`curl -f` exits non-zero): a partial download never
 looks complete, and a restore refuses it.
 
+**Large servers:** a stream sends its first byte only after the metadata snapshot, which takes from seconds to minutes
+with millions of objects; proxies that limit the wait for a response (ingress-nginx `proxy-read-timeout`, 60 s by
+default; Cloudflare, about 100 s) can cut it, and `kubectl port-forward` breaks easily on long transfers. For large
+data, back up to a directory (`POST /api/v1/backups` answers at once and the server works in the background, with no
+time limit), restore from there, and copy archives off the machine from that directory. A signature is checked when a
+request starts, so a download that runs for hours is fine.
+
 ### Back up to a directory
 
 Set `TimeStore:Backup:Path` to a directory **outside** the data directory: a second disk, a mounted share or a backup

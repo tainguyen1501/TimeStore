@@ -180,7 +180,10 @@ kubectl -n storage delete job timestore-restore
 helm install ts2 oci://ghcr.io/tainguyen1501/charts/timestore -n storage -f values.yaml
 ```
 
-**An archive on your machine** (a streamed backup): instead of the Job, the pod, then copy and restore:
+**An archive on your machine** (a streamed backup): instead of the Job, the pod, then copy and restore. For small and
+medium archives; the pod waits up to 6 hours. A large one (many GB) goes better from the backups claim with the Job:
+`kubectl cp` goes through the API server and starts over when it breaks, and the copy needs as much free space on the
+node as the archive.
 
 ```bash
 kubectl -n storage apply -f examples/restore-pod.yaml

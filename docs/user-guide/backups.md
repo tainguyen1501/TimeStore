@@ -41,7 +41,8 @@ curl -fsS "${SIGN[@]}" -OJ "$ADMIN/api/v1/backups/stream"
 ```
 
 You get `timestore-node-1-<date>T<time>Z.tar.zst` in the current folder. `-f` makes `curl` fail if the backup fails
-half way, so a partial file is never taken for a complete one.
+half way, so a partial file is never taken for a complete one. With a lot of data (many GB, millions of objects),
+prefer the server's backup folder below: it does not depend on a long download through a proxy.
 
 **Or let the server write it to its backup folder** (it must have one: the `Backup:Path` setting, see "Settings"
 below), and check on it:

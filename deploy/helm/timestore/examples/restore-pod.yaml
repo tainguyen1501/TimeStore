@@ -5,6 +5,9 @@
 #   kubectl -n <namespace> cp <archive>.tar.zst timestore-restore:/in/archive.tar.zst
 #   kubectl -n <namespace> exec timestore-restore -- /app/TimeStore.Server restore --archive /in/archive.tar.zst --data-path /data
 #   kubectl -n <namespace> delete pod timestore-restore
+# For small and medium archives. A large one (many GB) is better restored by restore-job.yaml from the backups claim:
+# `kubectl cp` goes through the API server and starts over when it breaks, and the copy needs as much free space on the
+# node (emptyDir /in) as the archive, on top of the restored data.
 apiVersion: v1
 kind: Pod
 metadata:
@@ -21,7 +24,7 @@ spec:
   containers:
     - name: restore
       image: ghcr.io/tainguyen1501/timestore:0.1.0 # CHANGE: the release's version, or newer
-      command: [sleep, "3600"] # waits for the copy and the exec; the pod ends after an hour at most
+      command: [sleep, "21600"] # waits for the copy and the exec; the pod ends after 6 hours at most (delete it sooner)
       env:
         - name: DOTNET_EnableDiagnostics
           value: "0"
