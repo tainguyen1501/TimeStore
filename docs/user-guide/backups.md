@@ -1,5 +1,9 @@
 # Backups
 
+> **Beta.** Backups work and are tested, but how they are started and the backup file may still change before
+> TimeStore 1.0. A backup is a copy of one moment, not a live copy: for data you cannot lose, also copy your buckets
+> to another storage (`docs/mirroring.md`).
+
 A backup is one file that holds the whole server as it was at one moment: buckets, objects, older versions, access
 keys and settings. TimeStore takes it while it keeps serving requests, checks every object while it copies it, and
 restores it with one command. This page walks through a first backup and a test restore; the details for operators
@@ -96,8 +100,9 @@ start and every key works; without it the server makes a new master key, the roo
 must be created again.
 
 To replace the data of the real server with a backup (after a lost disk, for example), stop it, restore into an empty
-data folder, and start it on that folder: `docs/backup.md`, "Restore an archive". On Kubernetes, the Helm chart's
-README has the steps.
+data folder, and start it on that folder: `docs/backup.md`, "Restore an archive". `--archive` also takes an `http(s)`
+URL (a presigned link). On Kubernetes, set `restore.archive` in the Helm chart's values: the pod restores an empty data
+volume before the server starts (the chart's README has the steps).
 
 ## Settings
 

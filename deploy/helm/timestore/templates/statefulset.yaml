@@ -44,6 +44,40 @@ spec:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
       enableServiceLinks: false
+      {{- if .Values.restore.archive }}
+      # restore.archive: fills an empty data volume from a backup before the server starts. It runs at every start but
+      # leaves a volume that holds data alone (--if-empty), and starts over after a restore that was cut.
+      initContainers:
+        - name: restore
+          image: {{ include "timestore.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - restore
+            - --archive
+            - {{ .Values.restore.archive | quote }}
+            - --data-path
+            - /data
+            - --master-key
+            - /data/master.key
+            - --if-empty
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          env:
+            - name: DOTNET_EnableDiagnostics
+              value: "0"
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+            {{- if .Values.backup.existingClaim }}
+            - name: backups
+              mountPath: /backups
+              readOnly: true
+            {{- end }}
+      {{- end }}
       containers:
         - name: timestore
           image: {{ include "timestore.image" . }}

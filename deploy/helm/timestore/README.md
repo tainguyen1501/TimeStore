@@ -68,6 +68,7 @@ work from outside. With TLS on the admin ingress, the session cookie is marked `
 | `config.secureCookies` | `null` | `Admin:SecureCookies`; null: true when `ingress.admin` has TLS |
 | `config.sessionHours` | `24` | `Admin:SessionHours` |
 | `backup.existingClaim` | `""` | A claim you create for backups started from the admin API; archives go to its folder `<release>/` (`Backup:Path=/backups/<release>`); empty: streamed backups only |
+| `restore.archive` | `""` | Restore this archive into the data volume when it is empty, before the server starts (an init container); a file on the backups claim or an http(s) URL. See "Restore a backup" |
 | `backup.compression` / `compressionLevel` / `minFreeBytes` | `zstd` / `3` / `1073741824` | `Backup:Compression`, `Backup:CompressionLevel` (1–19), `Backup:MinFreeBytes` |
 | `extraEnv` | `[]` | More settings as `TimeStore__Section__Key` variables ([all settings](../../../docs/configuration.md)) |
 | `persistence.enabled` | `true` | Off: an `emptyDir`, data lost on every restart |
@@ -98,6 +99,9 @@ work from outside. With TLS on the admin ingress, the session cookie is marked `
   It is reachable only inside the cluster (`ClusterIP`) unless you expose it.
 
 ## Back up
+
+> **Beta:** the backup API, the `backup.*` and `restore.*` values and the archive format may still change before 1.0.
+> A backup is a point-in-time copy, not a mirror ([docs/mirroring.md](../../../docs/mirroring.md)).
 
 TimeStore backs itself up while it runs: one archive of the server at an instant, every blob checked
 ([docs/backup.md](../../../docs/backup.md)). The backup API takes requests signed like S3 requests (SigV4), not sign-in
@@ -130,13 +134,55 @@ With `ReadWriteOnce` claims on node-local storage (k3s `local-path`), both claim
 
 ## Restore a backup
 
-A restore replaces the whole data directory with the archive's instant. It runs while no TimeStore pod uses the data
-claim, into an **empty** claim (an ext4 `lost+found` is fine), checks every entry, and removes what it wrote if a
-check fails. Objects written after the backup's instant are not in the restored server.
+A restore replaces the whole data directory with the archive's instant: objects written after the backup's instant
+are not in the restored server. It only ever fills an **empty** data claim (an ext4 `lost+found` is fine), checks
+every entry, and removes what it wrote if a check fails.
 
-The manifests are in [examples/](examples/) (not part of the installed chart: a restore is never automatic). Each
-marks what to change (`# CHANGE`): the image version, the archive (`/backups/<release>/<archiveName>`), the release
-in the claim's name.
+### With `restore.archive` (values only)
+
+Set the archive in the values; the pod restores it before the server starts (an init container running
+`restore --if-empty`):
+
+```yaml
+restore:
+  archive: /backups/ts/timestore-node-1-20261119T050809Z.tar.zst   # on the backups claim (backup.existingClaim), or
+  # archive: https://…/timestore-node-1-….tar.zst?X-Amz-…           # an http(s) URL, e.g. presigned (a credential: not in Git)
+```
+
+- An **empty** data claim is restored; a claim that **holds data is never touched**, so the value is safe to leave set
+  across restarts and upgrades. Remove it once the server runs on the restored data.
+- A restore cut half way (the pod killed) starts over at the next start; the server never starts on a half-restored
+  volume.
+- The master key goes to `/data/master.key` when the archive holds it (an admin key asked for it). With
+  `masterKey.existingSecret` the server keeps using the Secret's key, and the archive does not need one.
+- Watch it with `kubectl -n storage logs ts-timestore-0 -c restore`: **all checksums verified**, or why it refused (then
+  the pod stays in `Init:Error`; fix the value and apply again).
+
+**New cluster, or the data claim is gone:** install with `restore.archive` set; the new claim is empty and is filled
+before the server starts.
+
+**In place** (replace the data of a running release; the S3 API is down until the pod is back): stop the pod, delete
+the data claim, apply the values with `restore.archive`. On TimeOps: **Scale → 0** on the StatefulSet, **Delete** the
+claim on the cluster's resources page, add `restore.archive` to the Values, **Plan → Apply**.
+
+```bash
+kubectl -n storage scale statefulset ts-timestore --replicas=0
+kubectl -n storage wait --for=delete pod/ts-timestore-0 --timeout=120s
+kubectl -n storage delete pvc data-ts-timestore-0              # the data you replace: check the archive first
+helm upgrade ts oci://ghcr.io/tainguyen1501/charts/timestore -n storage --reuse-values \
+  --set restore.archive=/backups/ts/timestore-node-1-20261119T050809Z.tar.zst
+kubectl -n storage scale statefulset ts-timestore --replicas=1  # if the upgrade did not
+kubectl -n storage logs ts-timestore-0 -c restore               # "all checksums verified"
+```
+
+**Side by side** (the old server keeps serving): install a second release (`ts2`) with `restore.archive` set and other
+ingress hosts, check it, then move the ingress or DNS to it and uninstall the old release.
+
+### Without `restore.archive` (manifests)
+
+For a restore by hand, or into a claim no release uses yet. The manifests are in [examples/](examples/) (not part of
+the installed chart: a restore never starts by itself). Each marks what to change (`# CHANGE`): the image version, the
+archive (`/backups/<release>/<archiveName>`), the release in the claim's name.
 
 | File | What |
 |---|---|
@@ -145,7 +191,7 @@ in the claim's name.
 | [restore-pod.yaml](examples/restore-pod.yaml) | A pod to restore an archive from your machine (`kubectl cp`, then `exec`) |
 | [backups-claim.yaml](examples/backups-claim.yaml) | The backups claim (`backup.existingClaim`) |
 
-**A. In place** (the S3 API is down until the pod is back):
+**In place with a Job** (the S3 API is down until the pod is back):
 
 ```bash
 kubectl -n storage scale statefulset ts-timestore --replicas=0
@@ -166,7 +212,7 @@ cause, `kubectl delete job timestore-restore`, apply the Job again.
 After a lost cluster or a `helm uninstall` with its claim deleted: the same without the two scale steps, then
 `helm install` with the same release name.
 
-**B. Side by side** (the old server keeps serving until you switch): restore into the claim of a second release
+**Side by side with a Job** (the old server keeps serving until you switch): restore into the claim of a second release
 (`data-ts2-timestore-0` in both files), install it, check it, then move the ingress or DNS to it and uninstall the
 old release. Both releases may use the same backups claim: `ts2` writes to its own folder `ts2/` on it.
 

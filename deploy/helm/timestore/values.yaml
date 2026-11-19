@@ -62,6 +62,15 @@ backup:
   # runs stay until it ends). 0 turns the check off.
   minFreeBytes: 1073741824
 
+# Restore a backup into the data volume when the volume is empty, before the server starts (an init container running
+# `restore --if-empty`). A volume that holds data is never touched, so this is safe to leave set; remove it once the
+# server runs on the restored data. Chart README, "Restore a backup".
+restore:
+  # The archive: a file on the backups claim, /backups/<release>/<archiveName> (needs backup.existingClaim), or an
+  # http(s) URL read as it downloads (a presigned S3 or R2 URL). A presigned URL is a credential: keep it out of Git
+  # (TimeOps stores Values encrypted) and let it expire.
+  archive: ""
+
 # More environment variables, e.g. { name: TimeStore__Multipart__AbandonAfterDays, value: "3" }.
 extraEnv: []
 

@@ -98,6 +98,32 @@ public sealed class BackupApiTests(BackupServer server) : IClassFixture<BackupSe
     }
 
     [Fact]
+    public async Task RestoreFromAUrl_IfEmpty_FillsAnEmptyVolumeOnce_ThenLeavesItAlone()
+    {
+        using var s3 = server.Client();
+        await s3.PutBucketAsync("url-restore", _ct);
+        await PutAsync(s3, "url-restore", "a.txt", "restored from a URL");
+        var (archive, _) = await StreamAsync("?compression=zstd");
+        await using var web = new FileHttpServer(archive);
+
+        // As the chart's init container runs it: from a URL (a presigned query is not printed), only into an empty volume.
+        await using var restored = new RestoredServer(web.Url + "?X-Amz-Signature=secret-part", "--if-empty");
+        await restored.InitializeAsync();
+
+        Assert.Contains("all checksums verified", restored.RestoreOutput);
+        Assert.DoesNotContain("secret-part", restored.RestoreOutput);
+        using (var copy = restored.Client())
+            Assert.Equal("restored from a URL", await ReadAsync(copy, "url-restore", "a.txt"));
+
+        // The next start: the volume holds data, the restore leaves it alone (exit code 0) without reading the archive.
+        await web.DisposeAsync();
+        var (exitCode, output) = await TimeStoreServer.RunCommandAsync(
+            ["restore", "--archive", web.Url, "--data-path", restored.DataPath, "--if-empty"], _ct);
+        Assert.Equal(0, exitCode);
+        Assert.Contains("Restore skipped", output);
+    }
+
+    [Fact]
     public async Task Backup_WhileObjectsAreOverwrittenAndDeleted_IsConsistent()
     {
         using var s3 = server.Client();
@@ -429,6 +455,27 @@ public sealed class RestoreCommandTests
         finally
         {
             directory.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task AServer_RefusesToStart_OnAnUnfinishedRestore()
+    {
+        await using var server = new UnfinishedRestoreServer();
+
+        var failure = await Assert.ThrowsAsync<InvalidOperationException>(async () => await server.InitializeAsync());
+
+        Assert.Contains(".timestore-restore", failure.Message);
+    }
+
+    /// <summary>A data directory as a restore cut half way leaves it: the marker and part of the data.</summary>
+    private sealed class UnfinishedRestoreServer : TimeStoreServer
+    {
+        protected override async ValueTask PrepareDataAsync(string dataPath)
+        {
+            Directory.CreateDirectory(dataPath);
+            await File.WriteAllTextAsync(Path.Combine(dataPath, ".timestore-restore"), string.Empty);
+            await File.WriteAllTextAsync(Path.Combine(dataPath, "metadata.db"), "half written");
         }
     }
 

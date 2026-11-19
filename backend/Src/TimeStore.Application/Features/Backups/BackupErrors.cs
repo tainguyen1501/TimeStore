@@ -29,6 +29,7 @@ public static class BackupErrors
         public const string RestoreUnsupported = "BACKUP_RESTORE_UNSUPPORTED";
         public const string RestoreChecksumMismatch = "BACKUP_RESTORE_CHECKSUM_MISMATCH";
         public const string RestoreMasterKeyExists = "BACKUP_RESTORE_MASTER_KEY_EXISTS";
+        public const string RestoreArchiveUnavailable = "BACKUP_RESTORE_ARCHIVE_UNAVAILABLE";
     }
 
     public static readonly AppError Active =
@@ -83,6 +84,9 @@ public static class BackupErrors
 
     public static AppError RestoreChecksumMismatch(string entry) =>
         AppError.Validation(Codes.RestoreChecksumMismatch, $"Entry '{entry}' does not match its checksum; the archive is damaged.");
+
+    public static AppError RestoreArchiveUnavailable(string archive, string reason) =>
+        AppError.Validation(Codes.RestoreArchiveUnavailable, $"The archive {archive} cannot be read: {reason}");
 
     public static readonly AppError RestoreMasterKeyExists = AppError.Conflict(Codes.RestoreMasterKeyExists,
         "A master key file already exists where the archive's key would go; a restore never overwrites a key.");

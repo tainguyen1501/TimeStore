@@ -26,13 +26,16 @@ public class BackupServer : TimeStoreServer
 }
 
 /// <summary>A server started on the data directory that <c>TimeStore.Server restore</c> made from an archive.</summary>
-public sealed class RestoredServer(string archive) : TimeStoreServer
+/// <param name="archive">A file or an http(s) URL.</param>
+/// <param name="options">More options of the restore command (<c>--if-empty</c>).</param>
+public sealed class RestoredServer(string archive, params string[] options) : TimeStoreServer
 {
     public string RestoreOutput { get; private set; } = string.Empty;
 
     protected override async ValueTask PrepareDataAsync(string dataPath)
     {
-        var (exitCode, output) = await RunCommandAsync(["restore", "--archive", archive, "--data-path", dataPath], CancellationToken.None);
+        var (exitCode, output) = await RunCommandAsync(
+            ["restore", "--archive", archive, "--data-path", dataPath, .. options], CancellationToken.None);
         RestoreOutput = output;
         if (exitCode != 0)
             throw new InvalidOperationException($"restore exited with {exitCode}:\n{output}");

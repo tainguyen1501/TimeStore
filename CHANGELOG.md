@@ -53,12 +53,14 @@ The first public release, 0.1.0. A single-node, S3-compatible object storage ser
   local disk. Every write is on disk (fsync) before the server answers.
 - Secret access keys are stored encrypted with a master key (`master.key` in the data directory).
 - Benchmarks against other S3 servers: `docs/performance.md`.
-- Built-in backups of a running server: one consistent archive at an instant (tar + Zstandard or plain tar, every
+- Built-in backups of a running server (beta: the API and archive format may change before 1.0): one consistent archive at an instant (tar + Zstandard or plain tar, every
   blob checked against its MD5, a manifest and a `blobs.sha256` list), streamed from `GET /api/v1/backups/stream` or
   written to `Backup:Path` by a background worker; runs with history, progress and cancel; `TimeStore.Server restore`
   checks every entry and restores into an empty data directory. The master key is only included when an admin key asks
   for it. The backup API takes requests signed with SigV4 (like S3, `curl --aws-sigv4`) by a key with the new
-  **`backup`** role (backup API only, no admin UI) or an admin key; sign-in cookies are refused.
+  **`backup`** role (backup API only, no admin UI) or an admin key; sign-in cookies are refused. Restores read the
+  archive from a file or an http(s) URL; `--if-empty` and the Helm chart's `restore.archive` (an init container)
+  restore an empty volume before the server starts and never touch one with data.
 - Backup and restore guide: `docs/backup.md`.
 - Helm chart for Kubernetes (`deploy/helm/timestore`, published as `oci://ghcr.io/tainguyen1501/charts/timestore`),
   with a backups claim (`backup.existingClaim`) and restore steps (a Job, in place or side by side).

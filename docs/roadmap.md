@@ -25,8 +25,8 @@ stages.
 |---|---|---|---|
 | Versioning | (phase 6a) | ✅ | Versions and delete markers; restore an older version in the admin UI; lifecycle expires old versions |
 | Mirroring | — | ✅ documented | No TimeStore code: `rclone sync` / `copy` to any storage, as a CronJob ([mirroring.md](mirroring.md)) |
-| Backups | B1 | ✅ | Point-in-time archive (tar + Zstandard), blob hold, `backup_runs`, targets `stream` and `directory`, admin API, `restore` command, Helm backups claim and restore manifests ([research/backup.md](research/backup.md)) |
-| | B1.1 | ⏳ next | Restore from a URL or S3 (`restore --archive https://…`), `--if-empty`, and a declarative `restore.archive` in the Helm chart (an init container): a restore becomes Values → Plan → Apply on TimeOps |
+| Backups (beta until 1.0) | B1 | ✅ | Point-in-time archive (tar + Zstandard), blob hold, `backup_runs`, targets `stream` and `directory`, admin API, `restore` command, Helm backups claim and restore manifests ([research/backup.md](research/backup.md)) |
+| | B1.1 | ✅ | Restore from a URL or S3 (`restore --archive https://…`), `--if-empty`, and a declarative `restore.archive` in the Helm chart (an init container): a restore becomes Values → Plan → Apply on TimeOps |
 | | B2 | ⏳ | Backups page in the admin UI |
 | | B3 | ⏳ | Schedules and retention |
 | | B4 | ⏳ | `s3` target: archives sent to another S3 endpoint while they are written |

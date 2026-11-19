@@ -31,6 +31,12 @@ if (RestoreCommand.Matches(args))
 if (options.Validate() is { } problem)
     throw new InvalidOperationException(problem);
 
+// A restore was cut half way (a pod killed during the chart's restore init container): never serve partial data.
+if (File.Exists(Path.Combine(options.DataPath, BackupRestorer.InProgressMarker)))
+    throw new InvalidOperationException(
+        $"The data directory {Path.GetFullPath(options.DataPath)} holds an unfinished restore ({BackupRestorer.InProgressMarker}). "
+        + "Run the restore again (it starts over), or empty the directory.");
+
 builder.WebHost.ConfigureKestrel(kestrel =>
 {
     kestrel.AddServerHeader = false;

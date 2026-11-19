@@ -1,5 +1,7 @@
 # Backup and restore
 
+> **Beta.** Backups and restore are tested end to end, but the API, the options and the archive format may still change before 1.0. They are a point-in-time copy, not a mirror: for data you cannot lose, also mirror it to another storage ([mirroring.md](mirroring.md)).
+
 Backups are one of four ways to protect TimeStore's data; [data-protection.md](data-protection.md) compares them and
 says which to use for your size.
 
@@ -113,6 +115,12 @@ docker run --rm -v timestore-data:/data -v "$PWD":/backup:ro ghcr.io/tainguyen15
   restore --archive /backup/timestore-node-1-20261118T020000Z.tar.zst
 ```
 
+`--archive` takes a file or an `http(s)://` URL, read as it downloads (a presigned S3 or R2 URL: its query is a
+credential and is never printed). `--if-empty` leaves a data directory that already holds data alone and exits with 0:
+what the Helm chart's `restore.archive` runs in an init container at every start. While a restore writes, the data
+directory holds `.timestore-restore`; a restore cut half way leaves it, the next restore starts over, and the server
+refuses to start on such a directory.
+
 `--data-path` defaults to `TimeStore:DataPath` (`/data` in the image) and the key goes to `--master-key`, else
 `TimeStore:MasterKeyFile`, else `<data>/master.key`. When the archive holds no master key, put the original key there
 before the first start; otherwise the server creates a new one and the access keys stored before cannot be used (the
@@ -122,8 +130,9 @@ server has no admin sessions and no backup history; sign in again.
 The archive also opens with ordinary tools: `tar --zstd -xf <archive>` gives a data directory, and
 `sha256sum -c blobs.sha256` inside it checks it.
 
-On Kubernetes, the Helm chart's README has the steps: streaming, a backups claim (`backup.existingClaim`), and a
-restore Job, in place or side by side with a second release
+On Kubernetes, set `restore.archive` in the chart's values: an empty data claim is restored before the server starts,
+a claim with data is left alone. The Helm chart's README has the steps (a new cluster, in place, side by side) and the
+manual way with a Job
 ([deploy/helm/timestore/README.md](../deploy/helm/timestore/README.md)).
 
 ## Copy the data directory yourself

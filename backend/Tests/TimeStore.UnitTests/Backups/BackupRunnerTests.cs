@@ -63,7 +63,7 @@ public sealed class BackupRunnerTests : IAsyncLifetime
         var restored = Path.Combine(_root, "restored");
         var result = await Restore(archive, restored);
         Assert.True(result.IsSuccess, result.IsFailure ? result.Error.Message : null);
-        Assert.Equal(2, result.Value.Manifest.Blobs);
+        Assert.Equal(2, result.Value.Manifest!.Blobs);
         Assert.False(result.Value.MasterKeyRestored);
         Assert.Equal(FakeMetadataSnapshots.Database, await File.ReadAllBytesAsync(Path.Combine(restored, "metadata.db"), _ct));
         foreach (var blob in blobs)

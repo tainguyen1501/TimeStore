@@ -5,7 +5,7 @@ Built ones are documented in their own pages; planned ones are marked **Soon** a
 
 | Mechanism | What it is | Status | Page |
 |---|---|---|---|
-| **Backups** | A point-in-time archive of the whole server (metadata and data at one instant, every blob verified), taken while it runs; restored with a command | ✅ Built | [backup.md](backup.md) |
+| **Backups** | A point-in-time archive of the whole server (metadata and data at one instant, every blob verified), taken while it runs; restored with a command | 🧪 Beta | [backup.md](backup.md) |
 | **Versioning** | Older versions of every object are kept, so a delete or an overwrite can be undone | ✅ Built | [user guide](user-guide/README.md) |
 | **Mirroring** | An outside tool (`rclone sync`) copies buckets to another storage on a schedule | ✅ Works today, no TimeStore feature needed | [mirroring.md](mirroring.md) |
 | **Replication** | TimeStore itself sends every change of a bucket to another S3 endpoint, right after the commit | ⏳ Soon | [roadmap](roadmap.md#data-protection), [design](research/replication.md) |
@@ -49,14 +49,17 @@ Always:
 
 ## Backups
 
-Built (stage B1). One archive per backup: `manifest.json`, the metadata snapshot, every referenced blob, a
+**Beta.** Backups and restore are tested end to end, but the API, the options and the archive format may still change before 1.0. They are a point-in-time copy, not a mirror: for data you cannot lose, also mirror it to another storage ([mirroring.md](mirroring.md)).
+
+Built (stages B1 and B1.1). One archive per backup: `manifest.json`, the metadata snapshot, every referenced blob, a
 `blobs.sha256` list; `zstd` or plain tar. Streamed over HTTP or written to a directory; restored with
 `TimeStore.Server restore` into an empty data directory. **Suited for:** one-node and small installations,
 point-in-time recovery, moving to another machine, a safety copy before an upgrade. **Not suited (yet) for:** large
 data with constant writes, since every run reads all blobs (incremental backups are stage B5).
 
-Next stages (roadmap): restore from a URL or S3 and a declarative `restore.archive` in the Helm chart, schedules and
-retention (B3), sending archives to S3 (B4), incremental backups (B5), encryption (B6).
+Restores read a file or an http(s) URL; on Kubernetes, `restore.archive` in the Helm chart restores an empty volume
+before the server starts. Next stages (roadmap): schedules and retention (B3), sending archives to S3 (B4), incremental
+backups (B5), encryption (B6).
 
 ## Versioning
 

@@ -31,6 +31,11 @@ Backups (the server keeps running; docs/backup.md):
   or POST /api/v1/backups: archives go to the claim {{ .Values.backup.existingClaim }}, folder {{ .Release.Name }}/
 {{- end }}
   restore: see the chart README, "Restore a backup"
+{{- if .Values.restore.archive }}
+
+restore.archive is set: an empty data volume is filled from it before the server starts (a volume with data is left
+alone). Once the server runs on the restored data, remove restore.archive from the values.
+{{- end }}
 {{- if not .Values.masterKey.existingSecret }}
 
 The master key is kept inside the data volume. For production, create it as a Secret and keep a copy apart from the

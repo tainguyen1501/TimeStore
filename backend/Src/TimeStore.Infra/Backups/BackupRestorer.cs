@@ -5,14 +5,23 @@ using TimeStore.Primitives;
 
 namespace TimeStore.Infra.Backups;
 
-/// <param name="ArchivePath">The archive to restore (<c>.tar.zst</c> or <c>.tar</c>; detected from its bytes).</param>
+/// <param name="Archive">The archive to restore (<c>.tar.zst</c> or <c>.tar</c>, detected from its bytes): a file, or an
+/// <c>http(s)://</c> URL read as it downloads (<see cref="ArchiveSource"/>).</param>
 /// <param name="DataPath">The data directory to fill; it must be empty or missing.</param>
 /// <param name="MasterKeyPath">Where the archive's master key goes, when it holds one (never overwritten).</param>
 /// <param name="MaxSchemaVersion">The newest metadata schema this build knows.</param>
-public sealed record RestoreRequest(string ArchivePath, string DataPath, string MasterKeyPath, int MaxSchemaVersion);
+/// <param name="IfEmpty">A data directory that holds data is left alone (a success, nothing read): the restore of an
+/// init container that runs at every start, but restores only into a new, empty volume.</param>
+public sealed record RestoreRequest(string Archive, string DataPath, string MasterKeyPath, int MaxSchemaVersion, bool IfEmpty = false);
 
+/// <param name="Manifest">What was restored; null when <see cref="RestoreRequest.IfEmpty"/> skipped a directory with data.</param>
 /// <param name="MasterKeyRestored">Whether the archive held the master key (and it was written).</param>
-public sealed record RestoreSummary(BackupManifest Manifest, string Compression, bool MasterKeyRestored);
+public sealed record RestoreSummary(BackupManifest? Manifest, string Compression, bool MasterKeyRestored)
+{
+    public static readonly RestoreSummary Skipped = new(null, string.Empty, false);
+
+    public bool WasSkipped => Manifest is null;
+}
 
 /// <summary>
 /// Restores an archive into an empty data directory with the server stopped (docs/research/backup.md section 7). Every
@@ -20,8 +29,17 @@ public sealed record RestoreSummary(BackupManifest Manifest, string Compression,
 /// blob's SHA-256 against <c>blobs.sha256</c>, and nothing unlisted or missing. On any failure everything written is
 /// removed again, so a failed restore never leaves a data directory a server would start on.
 /// </summary>
+/// <remarks>
+/// While it writes, the data directory holds <see cref="InProgressMarker"/>, removed last. A process killed half way
+/// (a pod evicted during an init container's restore) leaves it: the next restore wipes the directory and starts over
+/// (everything in it came from that restore, which only starts in an empty directory), and the server refuses to start
+/// on it.
+/// </remarks>
 public sealed class BackupRestorer(IBackupArchiveFormat format)
 {
+    /// <summary>Present in a data directory while a restore writes it (see remarks).</summary>
+    public const string InProgressMarker = ".timestore-restore";
+
     private const int MaxManifestBytes = 1 << 20;
     private const string TempDirectory = "tmp";
     private const string ChecksumListName = "restore-blobs.sha256.tmp";
@@ -33,11 +51,15 @@ public sealed class BackupRestorer(IBackupArchiveFormat format)
     public async ValueTask<Result<RestoreSummary>> RestoreAsync(RestoreRequest request, CancellationToken ct)
     {
         var data = new DirectoryInfo(Path.GetFullPath(request.DataPath));
-        if (data.Exists && data.EnumerateFileSystemInfos().Any(entry => entry.Name != LostAndFound))
-            return BackupErrors.RestoreNotEmpty;
+        var interrupted = data.Exists && File.Exists(Path.Combine(data.FullName, InProgressMarker));
+        if (!interrupted && data.Exists && data.EnumerateFileSystemInfos().Any(entry => entry.Name != LostAndFound))
+            return request.IfEmpty ? RestoreSummary.Skipped : BackupErrors.RestoreNotEmpty;
 
         var createdDirectory = !data.Exists;
         data.Create();
+        if (interrupted)
+            Clean(data, createdDirectory: false, masterKeyPath: null); // an earlier restore of this directory was cut
+        await File.WriteAllTextAsync(Path.Combine(data.FullName, InProgressMarker), string.Empty, ct);
         var masterKeyPath = Path.GetFullPath(request.MasterKeyPath);
         var wroteMasterKey = false;
         try
@@ -45,6 +67,8 @@ public sealed class BackupRestorer(IBackupArchiveFormat format)
             var result = await UnpackAsync(request, data, masterKeyPath, () => wroteMasterKey = true, ct);
             if (result.IsFailure)
                 Clean(data, createdDirectory, wroteMasterKey ? masterKeyPath : null);
+            else
+                File.Delete(Path.Combine(data.FullName, InProgressMarker)); // last: the directory is complete
             return result;
         }
         catch (InvalidDataException)
@@ -63,15 +87,11 @@ public sealed class BackupRestorer(IBackupArchiveFormat format)
     private async ValueTask<Result<RestoreSummary>> UnpackAsync(
         RestoreRequest request, DirectoryInfo data, string masterKeyPath, Action masterKeyWritten, CancellationToken ct)
     {
-        await using var file = new FileStream(request.ArchivePath, new FileStreamOptions
-        {
-            Mode = FileMode.Open,
-            Access = FileAccess.Read,
-            Share = FileShare.Read,
-            Options = FileOptions.Asynchronous | FileOptions.SequentialScan,
-            BufferSize = 1 << 20,
-        });
-        await using var reader = await format.OpenReaderAsync(file, ct);
+        var opened = await ArchiveSource.OpenAsync(request.Archive, ct);
+        if (opened.IsFailure)
+            return opened.Error;
+        await using var source = opened.Value;
+        await using var reader = await format.OpenReaderAsync(source, ct);
 
         // 1. The manifest comes first: refuse what this build cannot restore before writing anything.
         var first = await reader.NextAsync(ct);

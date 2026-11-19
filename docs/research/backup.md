@@ -197,7 +197,7 @@ destinations in a UI. Immutable blobs make it cheap for TimeStore: the hold repl
 | Stage | Content | Tests |
 |---|---|---|
 | **B1: engine** ✅ | Blob hold (deferred deletions wait for it; the sweep already skips what they hold), metadata snapshot, tar + Zstandard archive, checksum verification, `backup_runs` + `StartAsync` + `BackupWorker`, targets `stream` and `directory`, admin API (start, list, get, cancel, download), `restore` command | Backup while objects are written, overwritten and deleted, then restore: every object at T present with its checksum; `zstd` and `none`; crash during a backup leaves the server intact and deletions resume; a corrupted blob fails the run; one active run; interrupted runs not re-run; restore refuses a non-empty directory and a newer format; the same round trip on the AOT binary in CI |
-| **B1.1: restore anywhere** | `restore --archive` from an `https://` URL or S3, `--if-empty` (skip a data directory that has data), `restore.archive` in the Helm chart as an init container: a restore is a Values change applied by TimeOps / Argo CD | Restore from a URL; a second start skips; the chart restores into an empty claim and never over data; on k3s through TimeOps |
+| **B1.1: restore anywhere** ✅ | `restore --archive` from an `https://` URL or S3, `--if-empty` (skip a data directory that has data), `restore.archive` in the Helm chart as an init container: a restore is a Values change applied by TimeOps / Argo CD | Restore from a URL; a second start skips; the chart restores into an empty claim and never over data; on k3s through TimeOps |
 | **B2: UI** | Backups page: start (target, compression, include master key), list with status and progress, download, cancel; user guide | Frontend checks; admin API covered in B1 |
 | **B3: schedules** | `backup_schedules`, scheduler, retention, UI | A due schedule starts one run; a busy server skips it; retention keeps N |
 | **B4: S3 target** | `s3` target with multipart upload, `backup_targets` with encrypted credentials, UI | Against a local TimeStore as the destination |
@@ -268,3 +268,19 @@ the orphan sweep reclaims exactly the held blob, and the next backup succeeds. N
 warnings, the whole end-to-end suite (262 tests) green on the binary; linux-arm64 container image built, backup (stream
 and directory), `restore` in the container, a server on the restored volume returned every object byte for byte. CI
 runs the end-to-end suite on the linux-x64 AOT binary.
+
+## 16. Stage B1.1 as built (2026-11-19)
+
+| Part | Where |
+|---|---|
+| Archive from a file or an `http(s)://` URL, read as it downloads; a presigned URL's query never printed | `Infra/Backups/ArchiveSource.cs` |
+| `--if-empty`: a data directory with data is left alone (exit code 0) | `BackupRestorer`, `RestoreCommand` |
+| `.timestore-restore` while a restore writes: an interrupted restore starts over; the server refuses to start on it | `BackupRestorer.InProgressMarker`, `Program.cs` |
+| `restore.archive` in the chart: an init container `restore --if-empty` (data claim, backups claim read-only, master key to `/data/master.key`) | `deploy/helm/timestore/templates/statefulset.yaml` |
+
+Tests: the restorer skips a directory with data without reading the archive, restores an empty one (a `lost+found`
+kept), starts over after an interrupted restore, leaves no marker after a failure, reads from a URL, refuses an
+unreadable file or URL without quoting the URL's query; end to end, a restore from a URL with `--if-empty`, then a
+second run that skips; a server refuses to start on an unfinished restore. The chart renders the init container only
+with `restore.archive` (CI renders it).
+

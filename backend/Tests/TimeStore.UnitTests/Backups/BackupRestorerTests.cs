@@ -134,6 +134,145 @@ public sealed class BackupRestorerTests : IDisposable
         Assert.Equal("keep me", await File.ReadAllTextAsync(key, _ct));
     }
 
+    [Fact]
+    public async Task IfEmpty_ADirectoryWithData_IsLeftAlone_WithoutReadingTheArchive()
+    {
+        Directory.CreateDirectory(DataPath);
+        await File.WriteAllTextAsync(Path.Combine(DataPath, "metadata.db"), "live data", _ct);
+
+        var result = await RestoreAsync(Path.Combine(_root, "never-read.tar.zst"), ifEmpty: true);
+
+        Assert.True(result.IsSuccess);
+        Assert.True(result.Value.WasSkipped);
+        Assert.Equal("live data", await File.ReadAllTextAsync(Path.Combine(DataPath, "metadata.db"), _ct));
+    }
+
+    [Fact]
+    public async Task IfEmpty_AnEmptyDirectory_IsRestored_AndLeavesNoMarker()
+    {
+        Directory.CreateDirectory(Path.Combine(DataPath, "lost+found"));
+
+        var result = await RestoreAsync(await ArchiveAsync(), ifEmpty: true);
+
+        Assert.False(result.Value.WasSkipped);
+        Assert.Equal(Database, await File.ReadAllBytesAsync(Path.Combine(DataPath, "metadata.db"), _ct));
+        Assert.False(File.Exists(Path.Combine(DataPath, BackupRestorer.InProgressMarker)));
+    }
+
+    [Fact]
+    public async Task AnInterruptedRestore_IsStartedOver_EvenWithIfEmpty()
+    {
+        // What a process killed half way leaves: the marker and part of the data.
+        Directory.CreateDirectory(Path.Combine(DataPath, "blobs", "aa"));
+        await File.WriteAllTextAsync(Path.Combine(DataPath, BackupRestorer.InProgressMarker), "", _ct);
+        await File.WriteAllTextAsync(Path.Combine(DataPath, "metadata.db"), "half written", _ct);
+        await File.WriteAllTextAsync(Path.Combine(DataPath, "blobs", "aa", "partial"), "x", _ct);
+
+        var result = await RestoreAsync(await ArchiveAsync(), ifEmpty: true);
+
+        Assert.False(result.Value.WasSkipped);
+        Assert.Equal(Database, await File.ReadAllBytesAsync(Path.Combine(DataPath, "metadata.db"), _ct));
+        Assert.False(File.Exists(Path.Combine(DataPath, "blobs", "aa", "partial")));
+        Assert.False(File.Exists(Path.Combine(DataPath, BackupRestorer.InProgressMarker)));
+    }
+
+    [Fact]
+    public async Task AFailedRestore_LeavesNoMarker()
+    {
+        Directory.CreateDirectory(DataPath);
+
+        await AssertRefusedAsync(await ArchiveAsync(withChecksums: false), BackupErrors.Codes.RestoreInvalidArchive, keepsDirectory: true);
+
+        Assert.Empty(Directory.GetFileSystemEntries(DataPath));
+    }
+
+    [Fact]
+    public async Task Restore_FromAUrl_ReadsTheArchiveAsItDownloads()
+    {
+        var archive = await ArchiveAsync();
+        await using var served = await ServedFile.StartAsync(archive, _ct);
+
+        var result = await RestoreAsync(served.Url + "?X-Amz-Signature=secret-part");
+
+        Assert.True(result.IsSuccess, result.IsFailure ? result.Error.Message : null);
+        Assert.Equal(BlobBytes, await File.ReadAllBytesAsync(Path.Combine(DataPath, BackupLayout.BlobEntry(BlobId)), _ct));
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Restore_OfAnArchiveThatCannotBeRead_IsRefused_WithoutTheUrlsQuery(bool url)
+    {
+        await using var served = await ServedFile.StartAsync(Path.Combine(_root, "missing.tar.zst"), _ct);
+        var archive = url ? served.Url.Replace("missing", "absent") + "?X-Amz-Signature=secret-part" : Path.Combine(_root, "absent.tar.zst");
+
+        var result = await RestoreAsync(archive);
+
+        Assert.Equal(BackupErrors.Codes.RestoreArchiveUnavailable, result.Error.Code);
+        Assert.DoesNotContain("secret-part", result.Error.Message);
+        Assert.Contains(url ? "404" : "does not exist", result.Error.Message);
+        Assert.False(Directory.Exists(DataPath));
+    }
+
+    /// <summary>Serves one file over HTTP on a free loopback port (404 for any other path).</summary>
+    private sealed class ServedFile : IAsyncDisposable
+    {
+        private readonly System.Net.HttpListener _listener = new();
+        private readonly Task _loop;
+
+        private ServedFile(string path, int port)
+        {
+            Url = $"http://127.0.0.1:{port}/{Path.GetFileName(path)}";
+            _listener.Prefixes.Add($"http://127.0.0.1:{port}/");
+            _listener.Start();
+            _loop = Task.Run(async () =>
+            {
+                while (_listener.IsListening)
+                {
+                    System.Net.HttpListenerContext context;
+                    try
+                    {
+                        context = await _listener.GetContextAsync();
+                    }
+                    catch (Exception)
+                    {
+                        return; // stopped
+                    }
+
+                    if (context.Request.Url!.AbsolutePath == "/" + Path.GetFileName(path) && File.Exists(path))
+                    {
+                        await using var file = File.OpenRead(path);
+                        await file.CopyToAsync(context.Response.OutputStream);
+                    }
+                    else
+                    {
+                        context.Response.StatusCode = 404;
+                    }
+
+                    context.Response.Close();
+                }
+            });
+        }
+
+        public string Url { get; }
+
+        public static Task<ServedFile> StartAsync(string path, CancellationToken ct)
+        {
+            using var probe = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
+            probe.Start();
+            var port = ((System.Net.IPEndPoint)probe.LocalEndpoint).Port;
+            probe.Stop();
+            return Task.FromResult(new ServedFile(path, port));
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            _listener.Stop();
+            _listener.Close();
+            await _loop;
+        }
+    }
+
     // --- Helpers ---------------------------------------------------------------------------------------------------
 
     private async Task AssertRefusedAsync(string archive, string code, bool keepsDirectory = false)
@@ -146,9 +285,9 @@ public sealed class BackupRestorerTests : IDisposable
             Assert.False(Directory.Exists(DataPath)); // created by the restore, removed again
     }
 
-    private ValueTask<Primitives.Result<RestoreSummary>> RestoreAsync(string archive, string? masterKeyPath = null) =>
+    private ValueTask<Primitives.Result<RestoreSummary>> RestoreAsync(string archive, string? masterKeyPath = null, bool ifEmpty = false) =>
         new BackupRestorer(_format).RestoreAsync(
-            new RestoreRequest(archive, DataPath, masterKeyPath ?? Path.Combine(DataPath, "master.key"), 10), _ct);
+            new RestoreRequest(archive, DataPath, masterKeyPath ?? Path.Combine(DataPath, "master.key"), 10, ifEmpty), _ct);
 
     /// <summary>Writes an archive the way the engine does, with knobs to break it.</summary>
     private async Task<string> ArchiveAsync(

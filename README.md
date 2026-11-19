@@ -45,7 +45,7 @@ disk before TimeStore answers, and the server idles at 40–70 MiB of memory.
 - Overwrites and deletes never change data in place; replaced blobs stay readable for reads in flight, and leftovers
   of interrupted writes are swept automatically.
 - Checksums (`Content-MD5`, CRC32, CRC32C, CRC64NVME, SHA-1, SHA-256) are verified on upload and stored.
-- **Online backups** to one verified archive (metadata and data at one instant, no downtime) and an offline restore
+- **Online backups** (beta) to one verified archive (metadata and data at one instant, no downtime) and an offline restore
   command; versioning; mirroring with rclone today and bucket replication planned
   ([data protection](docs/data-protection.md)).
 
