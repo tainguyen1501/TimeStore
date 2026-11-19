@@ -1,5 +1,6 @@
 using Microsoft.Data.Sqlite;
 using TimeStore.Domain.Objects;
+using TimeStore.Primitives;
 
 namespace TimeStore.Metadata.Sqlite;
 
@@ -37,7 +38,7 @@ public sealed partial class SqliteMetadataStore
     public async ValueTask<DeletionBatch> DeleteObjectVersionsAsync(
         Guid bucketId, IReadOnlyList<ObjectToDelete> objects, CancellationToken ct)
     {
-        var at = SqliteTime.FromUnixMs(SqliteTime.ToUnixMs(DateTime.UtcNow));
+        var at = _clock.UtcNowMs;
         return await writer.WriteAsync(async (connection, transaction) =>
         {
             var versioning = await ReadVersioningAsync(connection, transaction, bucketId, ct) ?? BucketVersioning.Unversioned;

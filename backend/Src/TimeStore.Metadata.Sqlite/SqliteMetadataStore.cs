@@ -10,8 +10,15 @@ namespace TimeStore.Metadata.Sqlite;
 /// <see cref="IMetadataStore"/> on SQLite with raw ADO.NET (no EF, no Dapper: AOT). Reads use pooled connections;
 /// every write goes through the one <see cref="SqliteWriter"/> (single writer, group commit).
 /// </summary>
-public sealed partial class SqliteMetadataStore(SqliteConnectionFactory connections) : IMetadataStore, IAsyncDisposable
+/// <param name="clock">
+/// Times the store records itself (when a delete makes a version noncurrent). The services' clock, so lifecycle rules
+/// and tests see one time; the system clock when not given.
+/// </param>
+public sealed partial class SqliteMetadataStore(SqliteConnectionFactory connections, TimeProvider? clock = null)
+    : IMetadataStore, IAsyncDisposable
 {
+    private readonly TimeProvider _clock = clock ?? TimeProvider.System;
+
     private readonly SqliteWriter writer = new(connections);
 
     /// <summary>Transactions the writer has committed (tests: writes are grouped).</summary>

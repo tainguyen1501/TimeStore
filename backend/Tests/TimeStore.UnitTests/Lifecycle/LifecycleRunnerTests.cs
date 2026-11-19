@@ -28,7 +28,7 @@ public sealed class LifecycleRunnerTests : IAsyncLifetime
     {
         var connections = new SqliteConnectionFactory(new SqliteMetadataOptions(Path.Combine(_directory, "metadata.db")));
         await new SqliteMetadataInitializer(connections, TimeProvider.System).InitializeAsync(_ct);
-        _store = new SqliteMetadataStore(connections);
+        _store = new SqliteMetadataStore(connections, _clock); // deletes record noncurrent time on the same clock
         _runner = new LifecycleRunner(_store, _deletions, _clock);
         _bucket = new Bucket(Guid.CreateVersion7(), "lc-bucket", Start);
         await _store.TryCreateBucketAsync(_bucket, _ct);
