@@ -68,8 +68,9 @@ elsewhere.
 
 Works today with any S3 tool; tested with `rclone` 1.68 between two TimeStore servers on k3s. **Suited for:** small
 and medium buckets, copying to any storage rclone supports (S3, Google Drive, SFTP…), a stopgap until replication.
-**Not suited for:** millions of objects synced often (each run lists both sides), or a near-zero loss window.
-Details: [mirroring.md](mirroring.md).
+**Not suited for:** millions of objects synced often (each run lists both sides), or a near-zero loss window. A mirror
+holds the current objects (with their metadata when rclone runs with `-M`), not versions, bucket settings or access
+keys. Details: [mirroring.md](mirroring.md).
 
 ## Replication (Soon)
 
