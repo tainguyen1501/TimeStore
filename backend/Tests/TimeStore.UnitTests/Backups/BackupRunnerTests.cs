@@ -19,7 +19,7 @@ public sealed class BackupRunnerTests : IAsyncLifetime
     private readonly MemoryBackupTarget _target = new();
     private readonly TarBackupArchiveFormat _format = new();
     private FileSystemBlobStore _blobs = null!;
-    private DeferredBlobDeletions _deletions = null!;
+    private BlobCollector _deletions = null!;
 
     private string DataPath => Path.Combine(_root, "data");
 
@@ -27,7 +27,7 @@ public sealed class BackupRunnerTests : IAsyncLifetime
     {
         _blobs = new FileSystemBlobStore(new FileSystemBlobOptions(DataPath, "node-1"));
         await _blobs.InitializeAsync(_ct);
-        _deletions = new DeferredBlobDeletions(_blobs, new BlobDeletionOptions(TimeSpan.FromMinutes(1)), TimeProvider.System);
+        _deletions = new BlobCollector(new InMemoryMetadataStore(), _blobs, new BlobDeletionOptions(TimeSpan.FromMinutes(1)), TimeProvider.System);
     }
 
     public async ValueTask DisposeAsync()

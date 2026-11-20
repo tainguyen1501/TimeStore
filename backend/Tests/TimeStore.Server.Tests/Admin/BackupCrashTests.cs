@@ -112,16 +112,17 @@ public sealed class BackupCrashTests(SlowBackupServer server) : IClassFixture<Sl
             await PutAsync(s3, "written-after-restart.txt", "still writable"u8.ToArray());
         }
 
-        // 7. Deletions resume: the blob the hold kept is an orphan now (the in-memory queue died with the process);
-        //    the orphan sweep reclaims it and nothing else.
-        Assert.Contains(heldBlob, BlobFiles());
+        // 7. Deletions resume: the blob the hold kept was recorded as released by the overwrite's commit
+        //    (pending_blob_deletions), so the collector deletes it after the restart without waiting for the orphan
+        //    sweep, and the sweep then finds nothing to delete.
+        await WaitUntilAsync(() => !BlobFiles().Contains(heldBlob));
+        Assert.DoesNotContain(heldBlob, BlobFiles());
         var old = DateTime.UtcNow - TimeSpan.FromDays(1);
         foreach (var file in Directory.EnumerateFiles(BlobsPath, "*", SearchOption.AllDirectories))
             File.SetLastWriteTimeUtc(file, old);
         var sweep = await console.PostAsync("/api/v1/maintenance/blob-sweep", null, _ct);
         Assert.Equal(HttpStatusCode.OK, sweep.StatusCode);
-        Assert.Equal(1, (await sweep.Content.ReadFromJsonAsync<BlobSweepResponse>(Json, _ct))!.Deleted);
-        Assert.DoesNotContain(heldBlob, BlobFiles());
+        Assert.Equal(0, (await sweep.Content.ReadFromJsonAsync<BlobSweepResponse>(Json, _ct))!.Deleted);
         Assert.Equal(LargeObjects + 2, BlobFiles().Count); // the large objects, small.txt, written-after-restart.txt
 
         // 8. The next backup runs (no stale active run) and succeeds.

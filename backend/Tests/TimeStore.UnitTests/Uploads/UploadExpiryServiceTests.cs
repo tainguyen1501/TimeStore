@@ -22,7 +22,7 @@ public sealed class UploadExpiryServiceTests : IAsyncLifetime
     {
         _blobs = new FileSystemBlobStore(new FileSystemBlobOptions(_root, "node-1"));
         await _blobs.InitializeAsync(_ct);
-        await new BucketService(_store, Deletions.Immediate(_blobs), new TimeStore.Infra.Services.Policies.BucketPolicyCache(_store), new FixedTimeProvider()).CreateAsync(new CreateBucketRequest(Bucket), _ct);
+        await new BucketService(_store, Deletions.Immediate(_store, _blobs), new TimeStore.Infra.Services.Policies.BucketPolicyCache(_store), new FixedTimeProvider()).CreateAsync(new CreateBucketRequest(Bucket), _ct);
     }
 
     public ValueTask DisposeAsync()
@@ -38,14 +38,14 @@ public sealed class UploadExpiryServiceTests : IAsyncLifetime
     /// <summary>An upload started <paramref name="daysAgo"/> days before <see cref="Now"/>, with one part.</summary>
     private async Task<string> StartUploadAsync(string key, int daysAgo)
     {
-        var service = new UploadService(_store, _blobs, Deletions.Immediate(_blobs), new ChecksumFactory(), new FixedTimeProvider(Now.AddDays(-daysAgo)));
+        var service = new UploadService(_store, _blobs, Deletions.Immediate(_store, _blobs), new ChecksumFactory(), new FixedTimeProvider(Now.AddDays(-daysAgo)));
         var id = (await service.CreateAsync(new CreateUploadCommand(Bucket, key, null, null, null, [], []), _ct)).Value;
         await service.UploadPartAsync(new UploadPartCommand(Bucket, key, id, 1, 3, null), new MemoryStream([1, 2, 3]), () => null, _ct);
         return id;
     }
 
     private UploadExpiryService Expiry(TimeSpan? abandonAfter) =>
-        new(_store, Deletions.Immediate(_blobs), new UploadExpiryOptions(abandonAfter), new FixedTimeProvider(Now));
+        new(_store, Deletions.Immediate(_store, _blobs), new UploadExpiryOptions(abandonAfter), new FixedTimeProvider(Now));
 
     [Fact]
     public async Task AbortsOnlyUploadsOlderThanTheAge_AndFreesTheirParts()

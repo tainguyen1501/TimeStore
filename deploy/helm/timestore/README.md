@@ -72,6 +72,7 @@ work from outside. With TLS on the admin ingress, the session cookie is marked `
 | `config.secureCookies` | `null` | `Admin:SecureCookies`; null: true when `ingress.admin` has TLS |
 | `config.sessionHours` | `24` | `Admin:SessionHours` |
 | `backup.keep` | `1` | `Backup:Keep`: archives kept in `/data/backups` (1–100); older ones are deleted after a backup succeeds |
+| `blobs.retainDeletedDays` | `0` | `Blobs:RetainDeletedDays`: days released (overwritten or deleted) blobs stay on the volume (0–3650) so older metadata backups stay restorable; size the volume for it |
 | `backup.compression` / `compressionLevel` / `minFreeBytes` | `zstd` / `3` / `1073741824` | `Backup:Compression`, `Backup:CompressionLevel` (1–19), `Backup:MinFreeBytes` |
 | `restore.archive` | `""` | Restore this archive into the data volume when it is empty, before the server starts (an init container); an http(s) URL (or a file path the pod can read). See "Restore a backup" |
 | `extraEnv` | `[]` | More settings as `TimeStore__Section__Key` variables ([all settings](../../../docs/configuration.md)) |

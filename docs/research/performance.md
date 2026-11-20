@@ -104,6 +104,10 @@ Durability stays `synchronous=FULL`: a PUT is acknowledged only after the commit
 
 ## 8. Notes from step 5c
 
+> **Changed in B5a (2026-11-20):** the in-memory FIFO below became the table `pending_blob_deletions`, written by the
+> commit itself, and `DeferredBlobDeletions` became `BlobCollector` (docs/research/blob-retention.md). The grace and
+> the behaviour of a delay of 0 are unchanged; shutdown no longer deletes what waits, and a crash forgets nothing.
+
 - `IBlobDeletions` (Application) / `DeferredBlobDeletions` (Infra): every blob a commit releases (overwrite,
   delete, multi-delete, copy over, replaced part, completion's unlisted parts, abort, bucket deletion, expired
   uploads) goes into an in-memory FIFO and is deleted after `TimeStore:Blobs:DeleteDelaySeconds` (60); a loop drains

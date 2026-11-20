@@ -71,7 +71,7 @@ public sealed class BucketService(
         {
             case BucketDeletion.Deleted:
                 policies.Forget(name); // a new bucket with this name starts without the old policy
-                await deletions.DeferAsync(deletion.FreedBlobs);
+                await deletions.ReleasedAsync(); // recorded by the commit; collected after the wait
                 return Result.Success;
             case BucketDeletion.NotEmpty:
                 return BucketErrors.NotEmpty(name);

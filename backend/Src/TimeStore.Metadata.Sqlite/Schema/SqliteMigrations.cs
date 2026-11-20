@@ -319,7 +319,64 @@ internal static class SqliteMigrations
         ALTER TABLE backup_runs DROP COLUMN include_master_key;
         """;
 
+    // Replication (stage R1, docs/research/replication.md): one rule (destination) per bucket, its secret encrypted with
+    // the master key (ISecretProtector, associated data = rule id); paused_until/failures are the rule's backoff after a
+    // temporary destination failure. The queue is a transactional outbox: one row per change, written in the commit's
+    // transaction, deleted once the destination has the key's current state. Statuses: 'pending' | 'failed'.
+    private const string V12Replication = """
+        CREATE TABLE replication_rules (
+            id                BLOB    NOT NULL PRIMARY KEY,
+            bucket_id         BLOB    NOT NULL,
+            endpoint          TEXT    NOT NULL,
+            target_bucket     TEXT    NOT NULL,
+            region            TEXT    NOT NULL,
+            access_key_id     TEXT    NOT NULL,
+            secret_ciphertext BLOB    NOT NULL,
+            prefix            TEXT    NOT NULL COLLATE BINARY,
+            replicate_deletes INTEGER NOT NULL,
+            created_at        INTEGER NOT NULL,
+            updated_at        INTEGER NOT NULL,
+            paused_until      INTEGER NOT NULL DEFAULT 0,
+            failures          INTEGER NOT NULL DEFAULT 0,
+            last_error        TEXT,
+            last_success_at   INTEGER,
+            CONSTRAINT ux_replication_rules_bucket UNIQUE (bucket_id),
+            CONSTRAINT fk_replication_rules_bucket FOREIGN KEY (bucket_id) REFERENCES buckets (id) ON DELETE CASCADE
+        ) STRICT;
+
+        CREATE TABLE replication_queue (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            rule_id      BLOB    NOT NULL,
+            object_key   TEXT    NOT NULL COLLATE BINARY,
+            operation    TEXT    NOT NULL,
+            created_at   INTEGER NOT NULL,
+            attempts     INTEGER NOT NULL DEFAULT 0,
+            next_attempt INTEGER NOT NULL,
+            status       TEXT    NOT NULL,
+            last_error   TEXT,
+            CHECK (operation IN ('put', 'delete')),
+            CHECK (status IN ('pending', 'failed')),
+            CONSTRAINT fk_replication_queue_rule FOREIGN KEY (rule_id) REFERENCES replication_rules (id) ON DELETE CASCADE
+        ) STRICT;
+        CREATE INDEX ix_replication_queue_due ON replication_queue (status, next_attempt, id);
+        CREATE INDEX ix_replication_queue_key ON replication_queue (rule_id, object_key, id);
+        """;
+
+    // Released blobs (stage B5a, docs/research/blob-retention.md): a blob no row references any more waits here,
+    // written in the transaction of the commit that released it, until the collector deletes it after
+    // max(Blobs:DeleteDelaySeconds, Blobs:RetainDeletedDays). released_at, not a due time: raising the retention also
+    // protects blobs already released. node_id: each node collects its own disk (several nodes later).
+    private const string V13PendingBlobDeletions = """
+        CREATE TABLE pending_blob_deletions (
+            blob_id     BLOB    NOT NULL PRIMARY KEY,
+            node_id     TEXT    NOT NULL,
+            size        INTEGER NOT NULL,
+            released_at INTEGER NOT NULL
+        ) STRICT, WITHOUT ROWID;
+        CREATE INDEX ix_pending_blob_deletions_released ON pending_blob_deletions (node_id, released_at);
+        """;
+
     public static readonly string[] All =
         [V1Buckets, V2Objects, V3AccessKeys, V4Multipart, V5AdminSessions, V6BucketUsage, V7Versioning, V8Lifecycle, V9BucketPolicies,
-            V10BackupRuns, V11BackupRunsWithoutMasterKey];
+            V10BackupRuns, V11BackupRunsWithoutMasterKey, V12Replication, V13PendingBlobDeletions];
 }

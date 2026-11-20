@@ -3,6 +3,7 @@ using System.Text.Json.Serialization;
 using TimeStore.Contracts.AccessKeys;
 using TimeStore.Contracts.Auth;
 using TimeStore.Contracts.Backups;
+using TimeStore.Contracts.Replication;
 using TimeStore.Contracts.Buckets;
 using TimeStore.Contracts.Common;
 using TimeStore.Contracts.Lifecycle;
@@ -53,6 +54,8 @@ namespace TimeStore.Server.Admin;
 [JsonSerializable(typeof(ShareObjectResponse))]
 [JsonSerializable(typeof(SetBucketPolicyRequest))]
 [JsonSerializable(typeof(SetAccessKeyScopeRequest))]
+[JsonSerializable(typeof(SetReplicationRequest))]
+[JsonSerializable(typeof(ReplicationResponse))]
 [JsonSerializable(typeof(StartBackupRequest))]
 [JsonSerializable(typeof(BackupRunResponse))]
 [JsonSerializable(typeof(IReadOnlyList<BackupRunResponse>))]

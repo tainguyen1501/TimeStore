@@ -133,7 +133,7 @@ versionId, isLatest, isDeleteMarker, size, eTag, lastModified }], isTruncated, n
 
 `MetricsResponse`: `startedAt`, `uptimeSeconds`, `storage` (buckets, objects, totalBytes, noncurrentVersions,
 noncurrentBytes, incompleteUploads,
-incompleteUploadBytes, diskTotalBytes, diskFreeBytes, `byBucket: [{ name, objects, totalBytes }]`), `requests` since
+incompleteUploadBytes, diskTotalBytes, diskFreeBytes, `byBucket: [{ name, objects, totalBytes }]`, retainedBlobs and retainedBytes: released blobs still on disk, waiting for `Blobs:DeleteDelaySeconds` or `Blobs:RetainDeletedDays`), `replication` (every rule as `ReplicationResponse`, backlog without the failure list), `requests` since
 start on the S3 port (total, reads, writes, lists, deletes, other, clientErrors, serverErrors, bytesIn, bytesOut,
 p50Ms, p99Ms), `sampleIntervalSeconds` (10) and `samples` (up to 90, oldest first: `at`, requests, clientErrors,
 serverErrors, bytesIn, bytesOut, p50Ms, p99Ms within the interval; objects and totalBytes at its end).
@@ -211,6 +211,32 @@ The `restore` command (offline, `docs/backup.md`) reports `BACKUP_RESTORE_NOT_EM
 `BACKUP_RESTORE_UNSUPPORTED` (newer archive format or schema), `BACKUP_RESTORE_CHECKSUM_MISMATCH` and
 `BACKUP_RESTORE_ARCHIVE_UNAVAILABLE` (a missing file, a URL that does not answer 2xx). Archives never hold the master
 key: the restored server uses the key of its configuration.
+
+## Replication
+
+A bucket's replication rule (R1, design: `docs/research/replication.md`; guide: `docs/user-guide/replication.md`).
+Viewers read, admins change. The destination's secret key is accepted and never returned.
+
+| Method | Path | |
+|---|---|---|
+| GET | `/api/v1/buckets/{name}/replication` | The rule and its backlog (`ReplicationResponse`); 404 `REPLICATION_NOT_FOUND` |
+| PUT | `/api/v1/buckets/{name}/replication` | Create or replace (`SetReplicationRequest`). Writes and deletes a test object at the destination first; a refusal is 409 `REPLICATION_DESTINATION_FAILED` with the destination's S3 error code. `existingObjects` (default true) queues every current object in the same transaction, for a new rule or a new endpoint, bucket or prefix (not for other edits) |
+| DELETE | `/api/v1/buckets/{name}/replication` | 204; what waits in the queue is dropped, nothing is deleted at the destination |
+| POST | `/api/v1/buckets/{name}/replication/test` | Writes and deletes a test object with the saved settings |
+| POST | `/api/v1/buckets/{name}/replication/retry` | Failed changes are sent again; a paused rule resumes now |
+| POST | `/api/v1/buckets/{name}/replication/resync` | Every current object under the prefix is queued again (a destination that lost data or was replaced) |
+
+`SetReplicationRequest`: `endpoint` (`http(s)://host[:port]`, no path), `bucket`, `region` (default `us-east-1`; R2:
+`auto`), `accessKeyId`, `secretKey` (required for a new rule or a new endpoint or key; omitted keeps the stored one),
+`prefix`, `replicateDeletes` (default false), `existingObjects` (default true).
+
+`ReplicationResponse`: the settings, `pausedUntil` and `lastError` (temporary destination failures), `lastSuccessAt`,
+and `backlog`: `pending`, `oldestPendingAt` (the lag), `failed`, `failures` (newest 100: key, operation, attempts,
+error).
+
+Errors: 400 `REPLICATION_INVALID_ENDPOINT`, `REPLICATION_INVALID_DESTINATION`, `REPLICATION_SECRET_REQUIRED`; 404
+`BUCKET_NOT_FOUND`, `REPLICATION_NOT_FOUND`; 409 `REPLICATION_DESTINATION_FAILED`, `REPLICATION_DISABLED`
+(`Replication:Enabled=false`).
 
 ## Maintenance
 

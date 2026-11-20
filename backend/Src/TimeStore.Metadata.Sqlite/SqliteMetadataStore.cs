@@ -109,6 +109,7 @@ public sealed partial class SqliteMetadataStore(SqliteConnectionFactory connecti
             delete.CommandText = BucketSql.DeleteByName;
             delete.Parameters.AddText(BucketSql.Name, name);
             await delete.ExecuteNonQueryAsync(ct);
+            await ReleaseBlobsAsync(connection, transaction, freed, ct);
             return new BucketDeletionResult(BucketDeletion.Deleted, freed);
         });
     }

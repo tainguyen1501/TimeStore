@@ -201,6 +201,55 @@ allows at most one active run; an insert that hits it means "a backup is already
 `interrupted` at startup and never re-run. Snapshots (`VACUUM INTO tmp/backup-<id>.db`) leave this table and
 `admin_sessions` empty, so a restored server starts without history or sessions.
 
+### `replication_rules` (v12)
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | BLOB PK | UUIDv7; kept when the rule is edited |
+| `bucket_id` | BLOB | UNIQUE (one rule per bucket, R1); FK `buckets` `ON DELETE CASCADE` |
+| `endpoint`, `target_bucket`, `region`, `access_key_id` | TEXT | The destination (`https://host[:port]`, path-style) |
+| `secret_ciphertext` | BLOB | `ISecretProtector`, associated data = `bucket_id`; never returned or logged |
+| `prefix` | TEXT BINARY | Only keys starting with it (`""` = all) |
+| `replicate_deletes` | INTEGER | 0/1 |
+| `created_at`, `updated_at` | INTEGER | Unix ms UTC |
+| `paused_until`, `failures`, `last_error` | INTEGER, INTEGER, TEXT | Backoff after temporary destination failures; reset by a success |
+| `last_success_at` | INTEGER | Last change that reached the destination |
+
+### `replication_queue` (v12)
+
+The outbox: one row per change, inserted by `CommitObjectAsync`, `CompleteUploadAsync` and the deletes in the commit's
+own transaction (no row at all when no rule exists: the store keeps a rule count). The worker sends the key's current
+state and deletes the key's rows up to the newest id it had read.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | INTEGER PK AUTOINCREMENT | Order of the changes; never reused |
+| `rule_id` | BLOB | FK `replication_rules` `ON DELETE CASCADE` |
+| `object_key` | TEXT BINARY | |
+| `operation` | TEXT | `put` \| `delete` (CHECK); deletes are only queued when the rule sends them |
+| `created_at`, `next_attempt` | INTEGER | Unix ms UTC; `next_attempt` delays one key (its blob could not be read) |
+| `attempts`, `status`, `last_error` | INTEGER, TEXT, TEXT | `pending` \| `failed` (CHECK); failed only for a permanent refusal |
+
+Indexes: `ix_replication_queue_due (status, next_attempt, id)`, `ix_replication_queue_key (rule_id, object_key, id)`.
+Backup snapshots leave both tables empty: a restored server must not push its older state over a newer replica.
+
+### `pending_blob_deletions` (v13)
+
+Blobs no metadata row references any more, waiting to be deleted (docs/research/blob-retention.md). Inserted by the
+write that releases a blob, in its own transaction (`CommitObjectAsync`, `CompleteUploadAsync`, `CommitPartAsync`,
+`AbortUploadAsync`, `DeleteBucketIfEmptyAsync`, `DeleteObjectVersionsAsync`); deleted by the collector once
+max(`Blobs:DeleteDelaySeconds`, `Blobs:RetainDeletedDays`) has passed since `released_at`. The orphan sweep treats
+these blobs as referenced.
+
+| Column | Type | Notes |
+|---|---|---|
+| `blob_id` | BLOB PK | The released blob (`WITHOUT ROWID`) |
+| `node_id` | TEXT | The node whose disk holds it; each node collects its own |
+| `size` | INTEGER | Bytes, for the retained-bytes metric |
+| `released_at` | INTEGER | Unix ms UTC; the wait is computed from configuration, so raising the retention protects blobs released before |
+
+Index: `ix_pending_blob_deletions_released (node_id, released_at)`. Backup snapshots keep this table.
+
 ## Planned
 
 - Sizing estimate: 300–500 bytes per object row + index (100M objects ≈ 30–50 GB).

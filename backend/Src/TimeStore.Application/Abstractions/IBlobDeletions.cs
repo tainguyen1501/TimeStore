@@ -3,21 +3,37 @@ using TimeStore.Domain.Blobs;
 namespace TimeStore.Application.Abstractions;
 
 /// <summary>
-/// Deletes blobs that a commit has just released (an overwritten or deleted object, a replaced part, an aborted
-/// upload) after a grace period, not at once: a GET that is still reading the old version (a multipart object is read
-/// part by part) completes. Blobs of writes that never committed are deleted at once instead (nobody can read them).
+/// Deletes blobs that commits released (an overwritten or deleted object, a replaced part, an aborted upload). The
+/// store records each released blob in <c>pending_blob_deletions</c> in the commit's own transaction; the collector
+/// behind this interface deletes it once its wait is over: the read grace (a GET still reading the old version
+/// completes), or the retention that keeps older metadata backups restorable (docs/research/blob-retention.md).
+/// Blobs of writes that never committed are deleted at once by the service instead (nobody can reference them).
 /// </summary>
 public interface IBlobDeletions
 {
-    /// <summary>Schedules the blobs for deletion after the grace period (at once when the period is zero).</summary>
-    ValueTask DeferAsync(IEnumerable<BlobLocator> blobs);
+    /// <summary>
+    /// A commit just released blobs: with no wait configured they are deleted now, otherwise on schedule. Never needed
+    /// for correctness (the collector also runs on a timer); it keeps a zero wait immediate.
+    /// </summary>
+    ValueTask ReleasedAsync();
 
-    /// <summary>Whether the blob is waiting for its deletion (the orphan sweep leaves it alone).</summary>
-    bool IsPending(Guid blobId);
+    /// <summary>Deletes every released blob whose wait is over now; returns how many (the timer, tests, holds ending).</summary>
+    ValueTask<int> CollectAsync();
 }
 
-/// <param name="Delay">How long a released blob stays readable; zero deletes at once.</param>
-public sealed record BlobDeletionOptions(TimeSpan Delay)
+/// <param name="Delay">How long a released blob stays readable for reads in flight; zero deletes at once.</param>
+/// <param name="Retention">How long released blobs are kept for restores of older metadata (zero: only <paramref name="Delay"/>).</param>
+/// <param name="CollectInterval">How often the collector looks for blobs whose wait is over.</param>
+/// <param name="NodeId">This node: it deletes only blobs on its own disk.</param>
+public sealed record BlobDeletionOptions(
+    TimeSpan Delay, TimeSpan Retention = default, TimeSpan CollectInterval = default, string NodeId = BlobDeletionOptions.DefaultNodeId)
 {
+    public const string DefaultNodeId = "node-1";
     public static readonly TimeSpan DefaultDelay = TimeSpan.FromSeconds(60);
+    public static readonly TimeSpan DefaultCollectInterval = TimeSpan.FromSeconds(10);
+
+    /// <summary>What a released blob actually waits: the longer of the read grace and the retention.</summary>
+    public TimeSpan Wait => Delay > Retention ? Delay : Retention;
+
+    public TimeSpan Interval => CollectInterval > TimeSpan.Zero ? CollectInterval : DefaultCollectInterval;
 }

@@ -82,6 +82,32 @@ public static class SigV4Canonical
         return builder.ToString();
     }
 
+    /// <summary>
+    /// The canonical request of a request TimeStore sends (replication): <paramref name="headers"/> are every signed header,
+    /// lower-case names in ordinal order.
+    /// </summary>
+    public static string CanonicalRequest(
+        string method, string canonicalUri, string canonicalQuery, IReadOnlyList<KeyValuePair<string, string>> headers,
+        string payloadHash)
+    {
+        var builder = new StringBuilder(256);
+        builder.Append(method).Append('\n')
+            .Append(canonicalUri).Append('\n')
+            .Append(canonicalQuery).Append('\n');
+        foreach (var (name, value) in headers)
+        {
+            builder.Append(name).Append(':');
+            AppendTrimmed(builder, value);
+            builder.Append('\n');
+        }
+
+        builder.Append('\n');
+        for (var i = 0; i < headers.Count; i++)
+            builder.Append(i == 0 ? string.Empty : ";").Append(headers[i].Key);
+        builder.Append('\n').Append(payloadHash);
+        return builder.ToString();
+    }
+
     /// <summary>The string to sign: algorithm, timestamp, scope, hex SHA-256 of the canonical request.</summary>
     public static string StringToSign(string timestamp, string scope, string canonicalRequestSha256Hex) =>
         $"{SigV4Names.Algorithm}\n{timestamp}\n{scope}\n{canonicalRequestSha256Hex}";

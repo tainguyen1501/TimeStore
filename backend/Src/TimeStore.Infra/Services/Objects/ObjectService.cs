@@ -51,8 +51,8 @@ public sealed class ObjectService(IMetadataStore store, IBlobStore blobs, IBlobD
             }
 
             committed = true;
-            if (commit.Replaced is { } replaced)
-                await deletions.DeferAsync(replaced.Blobs);
+            if (commit.Replaced is not null)
+                await deletions.ReleasedAsync(); // recorded by the commit; collected after the wait
             return new PutObjectResult(stored.ETag, checksum, commit.Version?.WriteHeader);
         }
         finally
@@ -145,7 +145,7 @@ public sealed class ObjectService(IMetadataStore store, IBlobStore blobs, IBlobD
         if (targets.Count > 0)
         {
             var batch = await store.DeleteObjectVersionsAsync(found.Id, targets, ct);
-            await deletions.DeferAsync(batch.ReleasedBlobs.ToArray());
+            await deletions.ReleasedAsync(); // recorded by the commit; collected after the wait
             for (var j = 0; j < batch.Results.Count; j++)
             {
                 var deletion = batch.Results[j];

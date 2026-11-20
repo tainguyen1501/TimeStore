@@ -48,6 +48,16 @@ The first public release, 0.1.0. A single-node, S3-compatible object storage ser
 
 **Storage and operations**
 
+- Released blobs (overwritten, deleted, replaced or aborted parts) are recorded in the metadata by the commit that
+  releases them and deleted by a collector, instead of an in-memory queue: a crash forgets nothing. New
+  `Blobs:RetainDeletedDays` (default 0) keeps them longer so older metadata backups stay restorable, and
+  `Blobs:CollectSeconds`; metrics show `retainedBlobs` / `retainedBytes`.
+- Bucket replication (R1): a per-bucket rule (`/api/v1/buckets/{name}/replication`) sends every change, and the
+  objects already there, to another S3 endpoint within seconds; changes are queued in the write's own transaction (no
+  loss on a crash), coalesced per key, retried with a backoff while the destination is down, and checked with
+  `Content-MD5`. Set up and watched in the admin UI (bucket page → **Replication**: test, status, refused changes,
+  retry, resend everything, remove); rules and backlogs in the metrics. Settings `TimeStore:Replication:*`
+  (`docs/user-guide/replication.md`).
 - One Native AOT binary (Linux x64 and arm64, macOS arm64) and a Linux container image (`deploy/Dockerfile`).
 - Metadata in SQLite (WAL, `synchronous=FULL`) with a single writer and group commit; blobs as immutable files on
   local disk. Every write is on disk (fsync) before the server answers.

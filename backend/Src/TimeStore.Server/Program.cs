@@ -20,6 +20,7 @@ using TimeStore.Application.Features.Metrics;
 using TimeStore.Server.Metrics;
 using TimeStore.Application.Features.Backups;
 using TimeStore.Infra.Backups;
+using TimeStore.Server.Replication;
 
 var builder = WebApplication.CreateSlimBuilder(args);
 
@@ -104,13 +105,18 @@ builder.Services.AddSingleton(new BlobSweepOptions(options.BlobSweep.GracePeriod
 builder.Services.AddSingleton(new UploadExpiryOptions(options.Multipart.AbandonAfter));
 builder.Services.AddSingleton(options.Admin);
 builder.Services.AddSingleton(new AdminSessionOptions(options.Admin.SessionLifetime));
-builder.Services.AddSingleton(new BlobDeletionOptions(options.Blobs.DeleteDelay));
+builder.Services.AddSingleton(options.Blobs.ToOptions(options.NodeId));
 builder.Services.AddSingleton(new StorageMetricsOptions(options.DataPath));
 builder.Services.AddSingleton(new BackupOptions(
     options.NodeId, options.DataPath, Path.Combine(options.DataPath, FileSystemBlobStore.TempDirectory),
     options.Backup.Compression, options.Backup.CompressionLevel, options.Backup.MinFreeBytes, options.Backup.Keep));
 builder.Services.AddDirectoryBackupTarget(new DirectoryBackupOptions(options.Backup.DirectoryPath(options.DataPath)));
 builder.Services.AddHostedService<BackupWorker>();
+builder.Services.AddSingleton(options.Replication.ToOptions());
+builder.Services.AddSingleton<IReplicationClient, S3ReplicationClient>();
+builder.Services.AddSingleton<IReplicationObserver, ReplicationLog>();
+if (options.Replication.Enabled)
+    builder.Services.AddHostedService<ReplicationWorker>();
 builder.Services.AddSingleton<S3RequestMetrics>();
 builder.Services.AddSingleton<MetricsSampler>();
 builder.Services.AddHostedService(provider => provider.GetRequiredService<MetricsSampler>());
@@ -153,6 +159,7 @@ app.MapAdminApi();
 app.MapAdminObjectApi();
 app.MapAdminMetricsApi();
 app.MapAdminBackupApi();
+app.MapAdminReplicationApi();
 if (options.Admin.OpenApi)
     app.MapOpenApi(); // /openapi/v1.json, Development only by default (AdminSettings.OpenApi)
 app.UseAdminUi(options.Admin); // everything else on the admin port: the React UI

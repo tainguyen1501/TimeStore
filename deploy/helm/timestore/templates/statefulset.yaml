@@ -122,6 +122,8 @@ spec:
               value: {{ .Values.backup.minFreeBytes | int64 | quote }}
             - name: TimeStore__Backup__Keep
               value: {{ .Values.backup.keep | int | quote }}
+            - name: TimeStore__Blobs__RetainDeletedDays
+              value: {{ .Values.blobs.retainDeletedDays | int | quote }}
             # No diagnostics IPC socket: the root file system is read-only.
             - name: DOTNET_EnableDiagnostics
               value: "0"

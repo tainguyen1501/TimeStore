@@ -1,7 +1,9 @@
 using Microsoft.Data.Sqlite;
 using TimeStore.Domain.Blobs;
 using TimeStore.Domain.Objects;
+using TimeStore.Domain.Replication;
 using TimeStore.Domain.Uploads;
+using TimeStore.Primitives;
 
 namespace TimeStore.Metadata.Sqlite;
 
@@ -78,6 +80,8 @@ public sealed partial class SqliteMetadataStore
                 await upsert.ExecuteNonQueryAsync(ct);
             }
 
+            if (replaced is not null)
+                await ReleaseBlobsAsync(connection, transaction, [replaced], ct);
             return new PartCommit(PartCommitStatus.Committed, replaced);
         });
     }
@@ -195,14 +199,17 @@ public sealed partial class SqliteMetadataStore
 
             var parts = await ListPartsAsync(connection, transaction, uploadId, afterPartNumber: 0, int.MaxValue, ct);
             await DeleteUploadAsync(connection, transaction, uploadId, ct);
-            return parts.ConvertAll(p => p.Blob);
+            var blobs = parts.ConvertAll(p => p.Blob);
+            await ReleaseBlobsAsync(connection, transaction, blobs, ct);
+            return blobs;
         });
     }
 
     public async ValueTask<UploadCompletion> CompleteUploadAsync(
         StoredObject stored, CommitCondition condition, CancellationToken ct)
     {
-        return await writer.WriteAsync(async (connection, transaction) =>
+        var queued = 0;
+        var completion = await writer.WriteAsync(async (connection, transaction) =>
         {
             if (stored.Data is not MultipartBlobs manifest)
                 throw new ArgumentException("CompleteUploadAsync commits multipart objects only.", nameof(stored));
@@ -228,11 +235,17 @@ public sealed partial class SqliteMetadataStore
 
             var (released, version) = await CommitVersionAsync(connection, transaction, stored, existing, versioning, ct);
             await DeleteUploadAsync(connection, transaction, manifest.UploadId, ct);
+            // The commit's time, not the object's (a multipart object carries the upload's start): the lag shown is real.
+            queued = await QueueChangeAsync(connection, transaction, stored.BucketId, stored.Key, ReplicationOperation.Put, _clock.UtcNowMs, ct);
 
             var listed = manifest.Parts.Select(p => p.PartNumber).ToHashSet();
             var discarded = uploaded.Where(p => !listed.Contains(p.PartNumber)).Select(p => p.Blob).ToArray();
+            await ReleaseBlobsAsync(connection, transaction, released?.Blobs, ct);
+            await ReleaseBlobsAsync(connection, transaction, discarded, ct);
             return new UploadCompletion(CompletionStatus.Completed, released, discarded, version);
         });
+        SignalReplication(queued);
+        return completion;
     }
 
     private static async ValueTask<MultipartUpload?> FindUploadAsync(

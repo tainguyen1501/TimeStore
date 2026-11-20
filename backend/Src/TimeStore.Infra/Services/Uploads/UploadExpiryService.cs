@@ -24,7 +24,7 @@ public sealed class UploadExpiryService(
                 // Null: completed or aborted by a client since the listing; nothing to free.
                 if (await store.AbortUploadAsync(upload.BucketId, upload.Key, upload.UploadId, ct) is { } parts)
                 {
-                    await deletions.DeferAsync(parts);
+                    await deletions.ReleasedAsync(); // recorded by the commit; collected after the wait
                     aborted++;
                 }
             }

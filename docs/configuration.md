@@ -21,6 +21,8 @@ separator (`TimeStore__DataPath=/data`, `TimeStore__S3__RootSecretKey=...`). Env
 | `MasterKeyFile` | — | A file holding the master key instead (Base64, or the 32 raw bytes of a `master.key` of an earlier version): a mounted Secret, a Docker secret. Set one of the two, not both |
 | `Lifecycle:Enabled` | `true` | Apply bucket lifecycle rules in the background |
 | `Lifecycle:IntervalMinutes` | `60` | Minutes between lifecycle runs (1–1440); rules count whole days at midnight UTC |
+| `Blobs:RetainDeletedDays` | `0` | Days a released blob is kept before it is deleted (0–3650), so an older metadata backup can still be restored. Set it to how long metadata backups are kept plus a margin (kept 30 days → `35`). Everything overwritten or deleted stays on disk this long: watch `retainedBytes` in the metrics ([blob retention](research/blob-retention.md)) |
+| `Blobs:CollectSeconds` | `10` | How often released blobs whose wait is over are deleted (1–3600) |
 | `Blobs:DeleteDelaySeconds` | `60` | How long a blob released by an overwrite, delete or abort stays readable (GETs in flight complete); 0 deletes at once |
 | `BlobSweep:Enabled` | `true` | Remove orphan blobs (written but never committed) at startup and on an interval |
 | `Multipart:AbandonAfterDays` | `7` | Abort multipart uploads nobody completed after this many days (0 = never); runs with the sweep |
@@ -34,6 +36,12 @@ separator (`TimeStore__DataPath=/data`, `TimeStore__S3__RootSecretKey=...`). Env
 | `Backup:Compression` | `zstd` | Default compression of an archive: `zstd` (`.tar.zst`) or `none` (`.tar`) |
 | `Backup:CompressionLevel` | `3` | Zstandard level 1–19 (higher: smaller, slower) |
 | `Backup:MinFreeBytes` | `1073741824` | A backup refuses to start with less free space in `DataPath` (blobs released meanwhile stay until it ends); 0 turns the check off |
+| `Replication:Enabled` | `true` | Run the replication worker and accept new rules. Off: buckets with a rule still queue their changes, sent once it is on again ([replication](user-guide/replication.md)) |
+| `Replication:Concurrency` | `4` | Objects sent at the same time, over every rule (1–64) |
+| `Replication:PollSeconds` | `5` | Queue read when no commit woke the worker: a safety net (1–86400) |
+| `Replication:BatchDelayMilliseconds` | `200` | Wait after a wake-up, so a burst of writes to one key is sent once (0–10000) |
+| `Replication:MaxBackoffSeconds` | `900` | Longest pause after repeated temporary destination failures (1, 2, 4 … seconds up to this) |
+| `Replication:RequestTimeoutSeconds` | `900` | Longest time for one request to a destination: a whole object or one part (10–86400) |
 
 `dotnet run` uses the `Development` environment (`Properties/launchSettings.json`), so the development key pair
 applies. Any other environment refuses to start until the root key pair is configured.

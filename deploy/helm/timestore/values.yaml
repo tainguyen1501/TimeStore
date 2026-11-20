@@ -65,6 +65,13 @@ backup:
   # runs stay until it ends). 0 turns the check off.
   minFreeBytes: 1073741824
 
+# Blobs released by overwrites and deletes (docs/research/blob-retention.md).
+blobs:
+  # Blobs:RetainDeletedDays: days a released blob stays on the data volume before it is deleted (0-3650), so an older
+  # metadata backup can still be restored. Set it to how long metadata backups are kept plus a margin (30 -> 35).
+  # Everything overwritten or deleted stays this long: size the volume for it (metrics: retainedBytes). 0: 60 seconds.
+  retainDeletedDays: 0
+
 # Restore a backup into the data volume when the volume is empty, before the server starts (an init container running
 # `restore --if-empty`). A volume that holds data is never touched, so this is safe to leave set; remove it once the
 # server runs on the restored data. Chart README, "Restore a backup".

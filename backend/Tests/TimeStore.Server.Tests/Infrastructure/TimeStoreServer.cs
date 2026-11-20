@@ -182,6 +182,7 @@ public class TimeStoreServer : IAsyncLifetime
         start.Environment["TimeStore__MasterKey"] = MasterKey;
         start.Environment["TimeStore__S3__Region"] = Region;
         start.Environment["TimeStore__Blobs__DeleteDelaySeconds"] = BlobDeleteDelaySeconds.ToString();
+        start.Environment["TimeStore__Blobs__CollectSeconds"] = "1";
         Configure(start.Environment);
         start.WorkingDirectory = AppContext.BaseDirectory;
         start.RedirectStandardOutput = true;

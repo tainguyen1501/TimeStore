@@ -11,6 +11,8 @@ using TimeStore.Infra.Services.Maintenance;
 using TimeStore.Infra.Services.Objects;
 using TimeStore.UnitTests.Fakes;
 
+using TimeStore.Infra.Services;
+
 namespace TimeStore.UnitTests.Maintenance;
 
 public sealed class BlobSweepServiceTests : IAsyncLifetime
@@ -30,8 +32,8 @@ public sealed class BlobSweepServiceTests : IAsyncLifetime
     {
         _blobs = new FileSystemBlobStore(new FileSystemBlobOptions(_root, "node-1"));
         await _blobs.InitializeAsync(_ct);
-        _sweeps = new BlobSweepService(_blobs, _store, Deletions.Immediate(_blobs), new BlobSweepOptions(Grace), _clock);
-        await new BucketService(_store, Deletions.Immediate(_blobs), new TimeStore.Infra.Services.Policies.BucketPolicyCache(_store), _clock).CreateAsync(new CreateBucketRequest(Bucket), _ct);
+        _sweeps = new BlobSweepService(_blobs, _store, new BlobSweepOptions(Grace), _clock);
+        await new BucketService(_store, Deletions.Immediate(_store, _blobs), new TimeStore.Infra.Services.Policies.BucketPolicyCache(_store), _clock).CreateAsync(new CreateBucketRequest(Bucket), _ct);
     }
 
     public ValueTask DisposeAsync()
@@ -70,27 +72,31 @@ public sealed class BlobSweepServiceTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Sweep_LeavesBlobsWaitingForTheirDeletionGrace()
+    public async Task Sweep_LeavesReleasedBlobsToTheirCollector()
     {
-        // An overwrite released this blob seconds ago; a GET may still be reading it. Its file is old (written long
-        // ago) and no row references it, but it is the deletion queue's to delete, after its grace.
-        var released = await CrashedWriteAsync();
-        var deletions = new TimeStore.Infra.Services.DeferredBlobDeletions(
-            _blobs, new TimeStore.Application.Abstractions.BlobDeletionOptions(TimeSpan.FromSeconds(60)), _clock);
-        await deletions.DeferAsync([released]);
-        using var sweeps = new BlobSweepService(_blobs, _store, deletions, new BlobSweepOptions(Grace), _clock);
+        // An overwrite released this blob: the store recorded it (pending_blob_deletions), a GET may still be reading it
+        // and an older metadata backup may still need it. Its file is old and no object references it, but it is the
+        // collector's to delete, after its wait.
+        await using var deletions = new BlobCollector(
+            _store, _blobs, new TimeStore.Application.Abstractions.BlobDeletionOptions(TimeSpan.FromSeconds(60)), _clock);
+        var service = new ObjectService(_store, _blobs, deletions, _clock);
+        await service.PutAsync(new PutObjectCommand(Bucket, "a.txt", 3, "text/plain", null, [], [], false),
+            new MemoryStream("abc"u8.ToArray()), () => null, _ct);
+        var released = ((SingleBlob)(await service.HeadAsync(Bucket, "a.txt", _ct)).Value.Data).Blob;
+        await service.PutAsync(new PutObjectCommand(Bucket, "a.txt", 3, "text/plain", null, [], [], false),
+            new MemoryStream("xyz"u8.ToArray()), () => null, _ct);
+        Age(released.BlobId);
 
-        var report = (await sweeps.SweepAsync(_ct)).Value;
+        var report = (await _sweeps.SweepAsync(_ct)).Value;
 
         Assert.True(File.Exists(PathOf(released.BlobId)));
-        Assert.Equal((1, 0), (report.Scanned, report.Deleted));
-        await deletions.DisposeAsync();
+        Assert.Equal(0, report.Deleted);
     }
 
     [Fact]
     public async Task Sweep_KeepsCommittedBlobs_EvenWhenOld()
     {
-        var service = new ObjectService(_store, _blobs, Deletions.Immediate(_blobs), _clock);
+        var service = new ObjectService(_store, _blobs, Deletions.Immediate(_store, _blobs), _clock);
         await service.PutAsync(new PutObjectCommand(Bucket, "a.txt", 3, "text/plain", null, [], [], false),
             new MemoryStream("abc"u8.ToArray()), () => null, _ct);
         var committed = ((SingleBlob)(await service.HeadAsync(Bucket, "a.txt", _ct)).Value.Data).Blob;
@@ -157,7 +163,7 @@ public sealed class BlobSweepServiceTests : IAsyncLifetime
     public async Task Sweep_WhileAnotherRuns_IsRefused()
     {
         var gate = new TaskCompletionSource();
-        using var sweeps = new BlobSweepService(new BlockingBlobStore(gate.Task), _store, Deletions.Immediate(_blobs), new BlobSweepOptions(Grace), _clock);
+        using var sweeps = new BlobSweepService(new BlockingBlobStore(gate.Task), _store, new BlobSweepOptions(Grace), _clock);
         var first = sweeps.SweepAsync(_ct).AsTask();
 
         var second = await sweeps.SweepAsync(_ct);

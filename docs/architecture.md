@@ -32,7 +32,12 @@ data/
   tmp/backup-<run id>.*    a running backup's metadata snapshot and checksum list; deleted when it ends and at startup
 ```
 
-Backups (`docs/research/backup.md`): a blob hold on the deferred deletion queue, then a `VACUUM INTO` snapshot at
+Released blobs (`docs/research/blob-retention.md`): a commit that releases a blob (overwrite, delete, replaced or
+aborted part) records it in `pending_blob_deletions` in its own transaction; `BlobCollector` deletes it after
+max(`Blobs:DeleteDelaySeconds`, `Blobs:RetainDeletedDays`), so a GET in flight completes and, with a retention, older
+metadata backups stay restorable. Nothing about deletions is kept in memory.
+
+Backups (`docs/research/backup.md`): a blob hold on the collector, then a `VACUUM INTO` snapshot at
 instant T; every blob the snapshot references is archived (tar + Zstandard) with its MD5 checked.
 
 Object keys never become paths (no length, character or case-sensitivity problems).
@@ -45,7 +50,7 @@ Object keys never become paths (no length, character or case-sensitivity problem
 3. `IMetadataStore.CommitObjectVersion(...)` in one transaction (the commit point); it returns the previous blob, if
    any. Before this step the blob's directory entry is durable too: the shard directory is fsynced after the rename
    (`DirectorySync`, libc via `LibraryImport`; no-op on Windows).
-4. Delete the previous blob asynchronously (unversioned overwrite).
+4. The previous blob (unversioned overwrite) was recorded as released by the commit; the collector deletes it later.
 
 A crash after 2 and before 3 leaves an orphan blob: the orphan-blob sweep (`BlobSweepService`, at startup and every
 6 h) removes blob files older than the grace period (1 h, measured on the last write) that no metadata row

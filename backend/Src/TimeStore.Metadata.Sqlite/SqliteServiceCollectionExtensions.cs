@@ -16,6 +16,7 @@ public static class SqliteServiceCollectionExtensions
         services.AddSingleton<SqliteMetadataStore>();
         services.AddSingleton<IMetadataStore>(provider => provider.GetRequiredService<SqliteMetadataStore>());
         services.AddSingleton<IBackupRunStore>(provider => provider.GetRequiredService<SqliteMetadataStore>());
+        services.AddSingleton<IReplicationStore>(provider => provider.GetRequiredService<SqliteMetadataStore>());
         services.AddSingleton<IMetadataSnapshots, SqliteMetadataSnapshots>();
         services.AddSingleton<IStorageInitializer, SqliteMetadataInitializer>();
         return services;

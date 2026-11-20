@@ -23,6 +23,8 @@ using TimeStore.Infra.Services.Uploads;
 using TimeStore.Infra.Services.Buckets;
 using TimeStore.Infra.Services.Objects;
 using TimeStore.Application.Features.Backups;
+using TimeStore.Application.Features.Replication;
+using TimeStore.Infra.Services.Replication;
 using TimeStore.Infra.Backups;
 using TimeStore.Infra.Services.Backups;
 
@@ -42,9 +44,9 @@ public static class InfraServiceCollectionExtensions
         services.TryAddSingleton(TimeProvider.System);
         services.AddMemoryCache();
         services.TryAddSingleton<ICacheService, MemoryCacheService>();
-        services.AddSingleton<DeferredBlobDeletions>();
-        services.AddSingleton<IBlobDeletions>(provider => provider.GetRequiredService<DeferredBlobDeletions>());
-        services.AddSingleton<IBlobHold>(provider => provider.GetRequiredService<DeferredBlobDeletions>());
+        services.AddSingleton<BlobCollector>();
+        services.AddSingleton<IBlobDeletions>(provider => provider.GetRequiredService<BlobCollector>());
+        services.AddSingleton<IBlobHold>(provider => provider.GetRequiredService<BlobCollector>());
         services.AddSingleton<IBucketService, BucketService>();
         services.AddSingleton<IObjectService, ObjectService>();
         services.AddSingleton<IObjectCopyService, ObjectCopyService>();
@@ -66,6 +68,9 @@ public static class InfraServiceCollectionExtensions
         services.AddSingleton<IBackupQueue, BackupQueue>();
         services.AddSingleton<IBackupRunner, BackupRunner>();
         services.AddSingleton<IBackupService, BackupService>();
+        services.TryAddSingleton(ReplicationOptions.Default);
+        services.AddSingleton<IReplicationService, ReplicationService>();
+        services.AddSingleton<IReplicationRunner, ReplicationRunner>();
         return services;
     }
 

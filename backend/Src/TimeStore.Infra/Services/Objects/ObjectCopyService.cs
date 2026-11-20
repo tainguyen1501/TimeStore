@@ -67,8 +67,8 @@ public sealed class ObjectCopyService(
             }
 
             committed = true;
-            if (commit.Replaced is { } replaced)
-                await deletions.DeferAsync(replaced.Blobs);
+            if (commit.Replaced is not null)
+                await deletions.ReleasedAsync(); // recorded by the commit; collected after the wait
             return new CopyObjectResult(copy.ETag, copy.CreatedAt, computed, commit.Version?.WriteHeader);
         }
         finally

@@ -1,5 +1,6 @@
 using Microsoft.Data.Sqlite;
 using TimeStore.Domain.Objects;
+using TimeStore.Domain.Replication;
 using TimeStore.Primitives;
 
 namespace TimeStore.Metadata.Sqlite;
@@ -39,14 +40,27 @@ public sealed partial class SqliteMetadataStore
         Guid bucketId, IReadOnlyList<ObjectToDelete> objects, CancellationToken ct)
     {
         var at = _clock.UtcNowMs;
-        return await writer.WriteAsync(async (connection, transaction) =>
+        var queued = 0;
+        var batch = await writer.WriteAsync(async (connection, transaction) =>
         {
+            queued = 0; // a savepoint retry starts over
             var versioning = await ReadVersioningAsync(connection, transaction, bucketId, ct) ?? BucketVersioning.Unversioned;
             var results = new List<ObjectDeletion>(objects.Count);
             foreach (var target in objects)
-                results.Add(await DeleteOneAsync(connection, transaction, bucketId, versioning, target, at, ct));
+            {
+                var deletion = await DeleteOneAsync(connection, transaction, bucketId, versioning, target, at, ct);
+                results.Add(deletion);
+                await ReleaseBlobsAsync(connection, transaction, deletion.Released?.Blobs, ct);
+                // Deleting the latest removes the key (delete); deleting one version may make an older one current, so
+                // that is queued as a change of content: the worker sends whatever the key holds now either way.
+                var operation = target.Version is null ? ReplicationOperation.Delete : ReplicationOperation.Put;
+                queued += await QueueChangeAsync(connection, transaction, bucketId, target.Key, operation, at, ct);
+            }
+
             return new DeletionBatch(results);
         });
+        SignalReplication(queued);
+        return batch;
     }
 
     /// <summary>The bucket's versioning state, or null when the bucket does not exist (read inside the write).</summary>

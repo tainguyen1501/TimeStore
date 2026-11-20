@@ -16,6 +16,31 @@ internal sealed class InMemoryMetadataStore : IMetadataStore
 {
     private readonly ConcurrentDictionary<string, Bucket> _buckets = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<(Guid, string), StoredObject> _objects = new();
+    private readonly ConcurrentDictionary<Guid, ReleasedBlob> _released = new();
+
+    /// <summary>When releases are recorded (tests that move time set it).</summary>
+    public Func<DateTime> Now { get; set; } = static () => DateTime.UtcNow;
+
+    private void Release(IEnumerable<BlobLocator>? blobs)
+    {
+        foreach (var blob in blobs ?? [])
+            _released.TryAdd(blob.BlobId, new ReleasedBlob(blob.BlobId, blob.NodeId, blob.Size, Now()));
+    }
+
+    public ValueTask<IReadOnlyList<ReleasedBlob>> ListReleasedBlobsAsync(
+        string nodeId, DateTime releasedBefore, int limit, CancellationToken ct) =>
+        ValueTask.FromResult<IReadOnlyList<ReleasedBlob>>(_released.Values
+            .Where(b => b.NodeId == nodeId && b.ReleasedAt <= releasedBefore).OrderBy(static b => b.ReleasedAt).Take(limit).ToArray());
+
+    public ValueTask ForgetReleasedBlobsAsync(IReadOnlyList<Guid> blobIds, CancellationToken ct)
+    {
+        foreach (var id in blobIds)
+            _released.TryRemove(id, out _);
+        return ValueTask.CompletedTask;
+    }
+
+    public ValueTask<RetainedBlobs> GetRetainedBlobsAsync(CancellationToken ct) =>
+        ValueTask.FromResult(new RetainedBlobs(_released.Count, _released.Values.Sum(static b => b.Size)));
 
     public ValueTask<Bucket?> FindBucketAsync(string name, CancellationToken ct) =>
         ValueTask.FromResult(_buckets.GetValueOrDefault(name));
@@ -119,6 +144,7 @@ internal sealed class InMemoryMetadataStore : IMetadataStore
             }
 
             _buckets.TryRemove(name, out _);
+            Release(freed);
             return ValueTask.FromResult(new BucketDeletionResult(BucketDeletion.Deleted, freed));
         }
     }
@@ -127,6 +153,7 @@ internal sealed class InMemoryMetadataStore : IMetadataStore
     {
         var referenced = _objects.Values.SelectMany(o => o.Data.Blobs).Select(b => b.BlobId)
             .Concat(_uploads.Values.SelectMany(u => u.Parts.Values).Select(p => p.Blob.BlobId))
+            .Concat(_released.Keys)
             .ToHashSet();
         return ValueTask.FromResult<IReadOnlyList<Guid>>(blobIds.Where(id => !referenced.Contains(id)).ToArray());
     }
@@ -221,6 +248,7 @@ internal sealed class InMemoryMetadataStore : IMetadataStore
             replaced = previous.Data;
             return stored;
         });
+        Release(replaced?.Blobs);
         return ValueTask.FromResult(new ObjectCommit(CommitStatus.Committed, replaced));
     }
 
@@ -247,6 +275,7 @@ internal sealed class InMemoryMetadataStore : IMetadataStore
             var removed = target.Version is null or { IsNull: true } && _objects.TryRemove((bucketId, target.Key), out var stored)
                 ? stored
                 : null;
+            Release(removed?.Data.Blobs);
             results.Add(new ObjectDeletion(target.Key, removed?.Data,
                 removed is null ? null : new ObjectVersion(removed.VersionId, true, BucketVersioning.Unversioned), false));
         }
@@ -259,8 +288,12 @@ internal sealed class InMemoryMetadataStore : IMetadataStore
         CancellationToken ct) =>
         throw new NotSupportedException("The in-memory store does not version objects.");
 
-    public ValueTask<ObjectData?> DeleteObjectAsync(Guid bucketId, string key, CancellationToken ct) =>
-        ValueTask.FromResult(_objects.TryRemove((bucketId, key), out var removed) ? removed.Data : null);
+    public ValueTask<ObjectData?> DeleteObjectAsync(Guid bucketId, string key, CancellationToken ct)
+    {
+        var data = _objects.TryRemove((bucketId, key), out var removed) ? removed.Data : null;
+        Release(data?.Blobs);
+        return ValueTask.FromResult(data);
+    }
 
     public ValueTask<IReadOnlyList<BlobLocator>> DeleteObjectsAsync(
         Guid bucketId, IReadOnlyList<string> keys, CancellationToken ct)
@@ -271,6 +304,8 @@ internal sealed class InMemoryMetadataStore : IMetadataStore
             if (_objects.TryRemove((bucketId, key), out var removed))
                 deleted.AddRange(removed.Data.Blobs);
         }
+
+        Release(deleted);
 
         return ValueTask.FromResult<IReadOnlyList<BlobLocator>>(deleted);
     }
@@ -319,6 +354,7 @@ internal sealed class InMemoryMetadataStore : IMetadataStore
                 return ValueTask.FromResult(new PartCommit(PartCommitStatus.UploadMissing, null));
             state.Parts.TryGetValue(part.PartNumber, out var previous);
             state.Parts[part.PartNumber] = part;
+            Release(previous is null ? null : [previous.Blob]);
             return ValueTask.FromResult(new PartCommit(PartCommitStatus.Committed, previous?.Blob));
         }
     }
@@ -370,7 +406,9 @@ internal sealed class InMemoryMetadataStore : IMetadataStore
             if (Find(bucketId, key, uploadId) is not { } state)
                 return ValueTask.FromResult<IReadOnlyList<BlobLocator>?>(null);
             _uploads.TryRemove(uploadId, out _);
-            return ValueTask.FromResult<IReadOnlyList<BlobLocator>?>(state.Parts.Values.Select(p => p.Blob).ToArray());
+            var parts = state.Parts.Values.Select(p => p.Blob).ToArray();
+            Release(parts);
+            return ValueTask.FromResult<IReadOnlyList<BlobLocator>?>(parts);
         }
     }
 
@@ -393,6 +431,8 @@ internal sealed class InMemoryMetadataStore : IMetadataStore
             _uploads.TryRemove(manifest.UploadId, out _);
             var listed = manifest.Parts.Select(p => p.PartNumber).ToHashSet();
             var discarded = state.Parts.Values.Where(p => !listed.Contains(p.PartNumber)).Select(p => p.Blob).ToArray();
+            Release(existing?.Data.Blobs);
+            Release(discarded);
             return ValueTask.FromResult(new UploadCompletion(CompletionStatus.Completed, existing?.Data, discarded));
         }
     }

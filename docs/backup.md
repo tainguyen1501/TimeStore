@@ -128,7 +128,7 @@ refuses to start on such a directory.
 
 `--data-path` defaults to `TimeStore:DataPath` (`/data` in the image). Then start the server with the same
 configuration: the master key the access keys were encrypted with (a server with another key refuses to start and
-says so), the root key pair, `NodeId`. The restored server has no admin sessions and no backup history; sign in again.
+says so), the root key pair, `NodeId`. The restored server has no admin sessions, no backup history and no replication rules (create them again on purpose, so an older state is never pushed over a newer replica); sign in again.
 
 An archive of an earlier version may hold the master key (those versions could put it in): the restore writes it to
 `master.key` in the data directory and says so. Move it out of the data directory and set `MasterKeyFile` to it, or

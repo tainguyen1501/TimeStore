@@ -30,15 +30,19 @@ stages.
 | | B2 | ⏳ | Backups page in the admin UI |
 | | B3 | ⏳ | Schedules and retention |
 | | B4 | ⏳ | `s3` target: archives sent to another S3 endpoint while they are written |
-| | B5 | ⏳ | Incremental backups (blobs never change: each archive holds the metadata and only new blobs) |
+| | B5a | ✅ built (2026-11-20, uncommitted for review) | Released blobs kept in `pending_blob_deletions` (written in the commit's transaction) and deleted by a collector after `Blobs:RetainDeletedDays` (default 0: as today); retained-bytes metric ([research/blob-retention.md](research/blob-retention.md)) |
+| | B5b | ⏳ | Metadata-only backups (`content: metadata`, seconds, refused at retention 0) and `restore --metadata` with a check of every referenced blob |
+| | B5c | ⏳ | Incremental blob copy to an S3 endpoint (blobs never change: only new ones are sent); until then `rclone copy` of `blobs/` |
 | | B6 | ⏳ | Archive encryption |
-| Replication | R1 | ⏳ | Per-bucket rules to one S3 destination, outbox in the commit's transaction, worker (coalescing, retries, checksum check) ([research/replication.md](research/replication.md)) |
-| | R2 | ⏳ | Existing objects (backfill), `x-amz-replication-status`, admin UI page, metrics |
+| Replication | R1 | ✅ built (2026-11-19, uncommitted for review) | Per-bucket rule to one S3 destination (admin API, tested on save), outbox in the five write methods' transaction, worker (coalescing, temporary vs permanent failures, Content-MD5 + ETag check, source parts kept), existing objects queued with the rule, own SigV4 client (Native AOT) ([research/replication.md](research/replication.md), "R1 as built") |
+| | R2a | ✅ built (2026-11-20, uncommitted for review) | Admin UI: Replication sheet on the bucket page (set up with a test, status, refused changes, retry, resync, remove); `POST …/replication/resync`; rules and backlogs in `/api/v1/metrics` |
+| | R2b | ⏳ | `x-amz-replication-status` on GET/HEAD (hot path: research and measure first), bandwidth limit |
 | | R3 | ⏳ | Versioned buckets (every version), S3 `PutBucketReplication` API |
 | | R4 | ⏳ | Two-way / site replication between TimeStore servers |
 
-Order to decide: B1.1 first (restore is what matters); then replication R1 or backups B3/B4, depending on whether
-busy servers (replication) or small ones (scheduled archives) come first.
+Order: B1.1 done; replication R1, R2a and B5a (blob retention) built; next B5b (metadata-only backups) or R2b. Open question (proposed 2026-11-19, not decided): schedules, destinations and
+a backups page (B2–B4) in a backup tool outside the server (TimeOps, a CronJob) that calls the stream API, the server
+keeping only the consistent snapshot (stream) and the restore, as Vault and etcd do.
 
 ## Phase 1 approach
 

@@ -31,8 +31,8 @@ public sealed class ObjectServiceTests : IAsyncLifetime
     {
         _blobs = new FileSystemBlobStore(new FileSystemBlobOptions(_root, "node-1"));
         await _blobs.InitializeAsync(_ct);
-        _service = new ObjectService(_store, _blobs, Deletions.Immediate(_blobs), new FixedTimeProvider());
-        await new BucketService(_store, Deletions.Immediate(_blobs), new TimeStore.Infra.Services.Policies.BucketPolicyCache(_store), new FixedTimeProvider()).CreateAsync(new CreateBucketRequest(Bucket), _ct);
+        _service = new ObjectService(_store, _blobs, Deletions.Immediate(_store, _blobs), new FixedTimeProvider());
+        await new BucketService(_store, Deletions.Immediate(_store, _blobs), new TimeStore.Infra.Services.Policies.BucketPolicyCache(_store), new FixedTimeProvider()).CreateAsync(new CreateBucketRequest(Bucket), _ct);
     }
 
     public ValueTask DisposeAsync()

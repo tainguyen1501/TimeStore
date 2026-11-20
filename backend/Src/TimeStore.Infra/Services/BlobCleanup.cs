@@ -17,11 +17,13 @@ internal static class BlobCleanup
                 await blobs.DeleteQuietlyAsync(blob);
         }
 
-        public async ValueTask DeleteQuietlyAsync(BlobLocator blob)
+        public ValueTask DeleteQuietlyAsync(BlobLocator blob) => blobs.DeleteQuietlyAsync(blob.BlobId);
+
+        public async ValueTask DeleteQuietlyAsync(Guid blobId)
         {
             try
             {
-                await blobs.DeleteAsync(blob.BlobId, CancellationToken.None);
+                await blobs.DeleteAsync(blobId, CancellationToken.None);
             }
             catch (IOException)
             {

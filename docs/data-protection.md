@@ -8,7 +8,7 @@ Built ones are documented in their own pages; planned ones are marked **Soon** a
 | **Backups** | A point-in-time archive of the whole server (metadata and data at one instant, every blob verified), taken while it runs; restored with a command | 🧪 Beta | [backup.md](backup.md) |
 | **Versioning** | Older versions of every object are kept, so a delete or an overwrite can be undone | ✅ Built | [user guide](user-guide/README.md) |
 | **Mirroring** | An outside tool (`rclone sync`) copies buckets to another storage on a schedule | ✅ Works today, no TimeStore feature needed | [mirroring.md](mirroring.md) |
-| **Replication** | TimeStore itself sends every change of a bucket to another S3 endpoint, right after the commit | ⏳ Soon | [roadmap](roadmap.md#data-protection), [design](research/replication.md) |
+| **Replication** | TimeStore itself sends every change of a bucket to another S3 endpoint, right after the commit | ✅ Built (admin UI and API) | [guide](user-guide/replication.md), [design](research/replication.md) |
 
 TimeStore runs as **one server** (one pod on Kubernetes, whatever the cluster's size); several TimeStore nodes sharing
 data come with phase 8 of the roadmap. "Small" and "large" below are about the data and the write rate, not the number
@@ -16,7 +16,7 @@ of Kubernetes nodes.
 
 ## What each one protects against
 
-| Event | Backups | Versioning | Mirroring | Replication (Soon) |
+| Event | Backups | Versioning | Mirroring | Replication |
 |---|---|---|---|---|
 | Disk, VPS or cluster lost | ✅ (archive kept elsewhere) | ❌ (same disk) | ✅ | ✅ |
 | Object deleted or overwritten by mistake | ✅ back to the last backup | ✅ any older version | ⚠️ only with `rclone copy` or a versioned destination | ⚠️ only with deletes off or a versioned destination |
@@ -26,7 +26,7 @@ of Kubernetes nodes.
 
 ## How much you lose, how fast you are back
 
-| | Backups | Mirroring | Replication (Soon) |
+| | Backups | Mirroring | Replication |
 |---|---|---|---|
 | Data lost when the server dies | Everything since the last backup (up to the interval: 24 h for nightly) | Everything since the last sync | Seconds (what was not sent yet) |
 | Back in service | Restore (unpack and verify), then start a server | Point clients at the copy (an S3 endpoint) | Point clients at the destination |
@@ -37,8 +37,8 @@ of Kubernetes nodes.
 | Setup | Recommended | Why |
 |---|---|---|
 | **One node, small data** (a VPS, a homelab, up to a few hundred GB, moderate writes) | **Backups** nightly, archive copied off the machine + **Versioning** on important buckets | One file per backup, restore checked entry by entry; versions undo mistakes without a restore |
-| **Small team or small cluster** (TimeStore in Kubernetes next to your apps, uploads during the day) | **Backups** nightly + **Mirroring** hourly to another S3 (R2, B2, another TimeStore) + **Versioning**; **Replication** once available | Mirroring narrows the loss window to an hour today, without new code; backups keep a clean point in time |
-| **Large or busy** (TBs, continuous uploads, users worldwide) | **Replication** to a versioned destination (Soon) + **Backups** weekly (incremental planned) | A full backup reads all data every time and a sync lists every object: neither scales to continuous writes; replication sends each change once |
+| **Small team or small cluster** (TimeStore in Kubernetes next to your apps, uploads during the day) | **Backups** nightly + **Mirroring** hourly to another S3 (R2, B2, another TimeStore) + **Versioning**; or **Replication** | Mirroring narrows the loss window to an hour today, without new code; backups keep a clean point in time |
+| **Large or busy** (TBs, continuous uploads, users worldwide) | **Replication** to a versioned destination + **Backups** weekly (incremental planned) | A full backup reads all data every time and a sync lists every object: neither scales to continuous writes; replication sends each change once |
 
 Always:
 
@@ -75,9 +75,11 @@ and medium buckets, copying to any storage rclone supports (S3, Google Drive, SF
 holds the current objects (with their metadata when rclone runs with `-M`), not versions, bucket settings or access
 keys. Details: [mirroring.md](mirroring.md).
 
-## Replication (Soon)
+## Replication
 
-Planned: per-bucket rules send every new or changed object (and, if enabled, deletes) to another S3 endpoint
-(MinIO, AWS S3, Cloudflare R2, another TimeStore). Changes are queued in the same transaction as the write, so none
-is lost on a crash; the client is answered first and the copy follows within seconds. **Suited for:** busy servers,
-continuous uploads, large data, a standby server in another place. Design: [research/replication.md](research/replication.md).
+A per-bucket rule sends every new or changed object (and, if enabled, deletes) to another S3 endpoint (MinIO, AWS
+S3, Cloudflare R2, Backblaze B2, another TimeStore). Changes are queued in the same transaction as the write, so none
+is lost on a crash; the client is answered first and the copy follows within seconds. Objects already in the bucket
+are copied when the rule is created. **Suited for:** busy servers, continuous uploads, large data, a standby server in
+another place. Set up and watched from the bucket page (**⋯ → Replication**). Not yet: versions (only each key's current state is sent), a status header.
+Guide: [user-guide/replication.md](user-guide/replication.md); design: [research/replication.md](research/replication.md).

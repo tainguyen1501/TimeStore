@@ -67,6 +67,9 @@ public sealed class ServerOptions
     /// <summary>Backups (section <c>TimeStore:Backup</c>).</summary>
     public BackupSettings Backup { get; set; } = new();
 
+    /// <summary>Bucket replication (section <c>TimeStore:Replication</c>).</summary>
+    public ReplicationSettings Replication { get; set; } = new();
+
     /// <summary>The first problem found, or null. Bad configuration must stop startup.</summary>
     public string? Validate()
     {
@@ -82,6 +85,8 @@ public sealed class ServerOptions
             return blobProblem;
         if (Lifecycle.Validate() is { } lifecycleProblem)
             return lifecycleProblem;
+        if (Replication.Validate() is { } replicationProblem)
+            return replicationProblem;
         if (Backup.Validate(DataPath) is { } backupProblem)
             return backupProblem;
         if (!IsValidNodeId(NodeId))

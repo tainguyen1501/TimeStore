@@ -27,8 +27,8 @@ public sealed class UploadServiceTests : IAsyncLifetime
     {
         var blobs = new FileSystemBlobStore(new FileSystemBlobOptions(_root, "node-1"));
         await blobs.InitializeAsync(_ct);
-        _service = new UploadService(_store, blobs, Deletions.Immediate(blobs), new ChecksumFactory(), new FixedTimeProvider());
-        await new BucketService(_store, Deletions.Immediate(blobs), new TimeStore.Infra.Services.Policies.BucketPolicyCache(_store), new FixedTimeProvider()).CreateAsync(new CreateBucketRequest(Bucket), _ct);
+        _service = new UploadService(_store, blobs, Deletions.Immediate(_store, blobs), new ChecksumFactory(), new FixedTimeProvider());
+        await new BucketService(_store, Deletions.Immediate(_store, blobs), new TimeStore.Infra.Services.Policies.BucketPolicyCache(_store), new FixedTimeProvider()).CreateAsync(new CreateBucketRequest(Bucket), _ct);
     }
 
     public ValueTask DisposeAsync()
@@ -74,7 +74,7 @@ public sealed class UploadServiceTests : IAsyncLifetime
         var md5s = Convert.FromHexString(p1.ETag).Concat(Convert.FromHexString(p2.ETag)).ToArray();
         Assert.Equal($"{Convert.ToHexStringLower(MD5.HashData(md5s))}-2", completed.Value.ETag);
         var blobs = new FileSystemBlobStore(new FileSystemBlobOptions(_root, "node-1"));
-        var head = await new TimeStore.Infra.Services.Objects.ObjectService(_store, blobs, Deletions.Immediate(blobs), new FixedTimeProvider())
+        var head = await new TimeStore.Infra.Services.Objects.ObjectService(_store, blobs, Deletions.Immediate(_store, blobs), new FixedTimeProvider())
             .HeadAsync(Bucket, Key, _ct);
         var data = Assert.IsType<MultipartBlobs>(head.Value.Data);
         Assert.Equal([0L, FullPart.Length], data.Parts.Select(p => p.Offset));

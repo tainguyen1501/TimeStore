@@ -141,7 +141,7 @@ public sealed class LifecycleRunner(IMetadataStore store, IBlobDeletions deletio
                 continue;
             if (await store.AbortUploadAsync(upload.BucketId, upload.Key, upload.UploadId, ct) is { } blobs)
             {
-                await deletions.DeferAsync(blobs);
+                await deletions.ReleasedAsync(); // recorded by the commit; collected after the wait
                 counts.Uploads++;
             }
         }
@@ -181,7 +181,7 @@ public sealed class LifecycleRunner(IMetadataStore store, IBlobDeletions deletio
             if (_pending.Count == 0)
                 return;
             var result = await store.DeleteObjectVersionsAsync(bucket.Id, _pending.Select(static p => p.Target).ToArray(), ct);
-            await deletions.DeferAsync(result.ReleasedBlobs.ToArray());
+            await deletions.ReleasedAsync(); // recorded by the commit; collected after the wait
             for (var i = 0; i < _pending.Count; i++)
             {
                 var deletion = result.Results[i];

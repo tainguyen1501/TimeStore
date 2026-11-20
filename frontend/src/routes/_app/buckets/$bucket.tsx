@@ -14,6 +14,7 @@ import {
   MoreHorizontal,
   Plus,
   RefreshCw,
+  Repeat2,
   Search,
   Settings,
   Table2,
@@ -30,6 +31,7 @@ import { NewFolderDialog } from "@/components/objects/new-folder-dialog"
 import { ObjectBrowser } from "@/components/objects/object-browser"
 import { ObjectDialog } from "@/components/objects/object-dialog"
 import { PolicySheet } from "@/components/objects/policy-sheet"
+import { ReplicationSheet } from "@/components/objects/replication-sheet"
 import { PublicBadge } from "@/components/objects/public-access"
 import { VersionTable } from "@/components/objects/version-table"
 import { ConfirmDialog } from "@/components/shared/confirm-dialog"
@@ -108,6 +110,7 @@ function BucketBrowserPage() {
   const [confirmSuspend, setConfirmSuspend] = useState(false)
   const [lifecycleOpen, setLifecycleOpen] = useState(false)
   const [policyOpen, setPolicyOpen] = useState(false)
+  const [replicationOpen, setReplicationOpen] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
   const publicPrefixes = useGetPublicPrefixes(bucket).data
   const setPublic = useSetPublic(bucket)
@@ -355,6 +358,10 @@ function BucketBrowserPage() {
                 <Clock />
                 Lifecycle rules
               </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setReplicationOpen(true)}>
+                <Repeat2 />
+                Replication
+              </DropdownMenuItem>
               {canWrite &&
                 (bucketPublic?.kind === "direct" ? (
                   <DropdownMenuItem
@@ -573,6 +580,12 @@ function BucketBrowserPage() {
         open={lifecycleOpen}
         canWrite={canWrite}
         onOpenChange={setLifecycleOpen}
+      />
+      <ReplicationSheet
+        bucket={bucket}
+        open={replicationOpen}
+        canWrite={canWrite}
+        onOpenChange={setReplicationOpen}
       />
       <PolicySheet
         bucket={bucket}

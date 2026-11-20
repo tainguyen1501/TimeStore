@@ -67,8 +67,8 @@ public sealed class UploadService(
                 return UploadErrors.NotFound; // completed or aborted while this part was uploading
 
             committed = true;
-            if (commit.Replaced is { } replaced)
-                await deletions.DeferAsync([replaced]);
+            if (commit.Replaced is not null)
+                await deletions.ReleasedAsync(); // recorded by the commit; collected after the wait
             return new PartUploaded(part.ETag, checksum);
         }
         finally
@@ -140,9 +140,7 @@ public sealed class UploadService(
             switch (completion.Status)
             {
                 case CompletionStatus.Completed:
-                    if (completion.Replaced is { } replaced)
-                        await deletions.DeferAsync(replaced.Blobs);
-                    await deletions.DeferAsync(completion.Discarded);
+                    await deletions.ReleasedAsync(); // replaced data and unlisted parts: recorded by the commit
                     return completed with { VersionId = completion.Version?.WriteHeader };
                 case CompletionStatus.BucketMissing:
                     return BucketErrors.NotFound(command.Bucket);
@@ -312,7 +310,7 @@ public sealed class UploadService(
             || await store.AbortUploadAsync(found.Id, key, id, ct) is not { } parts)
             return UploadErrors.NotFound;
 
-        await deletions.DeferAsync(parts);
+        await deletions.ReleasedAsync(); // recorded by the commit; collected after the wait
         return Result.Success;
     }
 

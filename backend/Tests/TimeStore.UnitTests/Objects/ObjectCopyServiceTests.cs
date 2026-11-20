@@ -24,8 +24,8 @@ public sealed class ObjectCopyServiceTests : IAsyncLifetime
     {
         var blobs = new FileSystemBlobStore(new FileSystemBlobOptions(_root, "node-1"));
         await blobs.InitializeAsync(_ct);
-        _service = new ObjectCopyService(_store, blobs, Deletions.Immediate(blobs), new ChecksumFactory(), new FixedTimeProvider());
-        _bucketId = (await new BucketService(_store, Deletions.Immediate(blobs), new TimeStore.Infra.Services.Policies.BucketPolicyCache(_store), new FixedTimeProvider()).CreateAsync(new CreateBucketRequest(Bucket), _ct)).Value.Id;
+        _service = new ObjectCopyService(_store, blobs, Deletions.Immediate(_store, blobs), new ChecksumFactory(), new FixedTimeProvider());
+        _bucketId = (await new BucketService(_store, Deletions.Immediate(_store, blobs), new TimeStore.Infra.Services.Policies.BucketPolicyCache(_store), new FixedTimeProvider()).CreateAsync(new CreateBucketRequest(Bucket), _ct)).Value.Id;
     }
 
     public ValueTask DisposeAsync()

@@ -121,7 +121,9 @@ public abstract class MetadataStoreContract : IAsyncLifetime
         var candidates = orphans.Concat([BlobOf(used).BlobId, BlobOf(replaced).BlobId]).ToList();
         var unreferenced = await Store.FindUnreferencedBlobsAsync(candidates, Ct);
 
-        Assert.Equal(orphans.Append(BlobOf(replaced).BlobId).Order(), unreferenced.Order());
+        // The replaced blob is no object's any more but waits for its collector (released), so it is not an orphan.
+        Assert.Equal(orphans.Order(), unreferenced.Order());
+        Assert.Equal([BlobOf(replaced).BlobId], await ReleasedIdsAsync());
         Assert.Empty(await Store.FindUnreferencedBlobsAsync([], Ct));
     }
 
@@ -232,7 +234,7 @@ public abstract class MetadataStoreContract : IAsyncLifetime
         Assert.Equal(ChecksumTypes.Composite, found.ChecksumType);
         Assert.Equal(stored.Checksum, found.Checksum);
         Assert.Equal(150, Assert.Single((await Store.ListObjectsAsync(bucket.Id, "", null, null, 10, Ct)).Objects).Size);
-        Assert.Equal([unlisted.Blob.BlobId], await Store.FindUnreferencedBlobsAsync([p1.Blob.BlobId, p2.Blob.BlobId, unlisted.Blob.BlobId], Ct));
+        Assert.Equal([unlisted.Blob.BlobId], await ReleasedIdsAsync()); // only the collector holds it now
     }
 
     [Fact]
@@ -249,7 +251,7 @@ public abstract class MetadataStoreContract : IAsyncLifetime
         var single = NewObject(bucket, "a.bin");
         var commit = await Store.CommitObjectAsync(single, CommitCondition.Always, Ct);
         Assert.Equal(parts.Select(p => p.Blob), Assert.IsType<MultipartBlobs>(commit.Replaced).Blobs);
-        Assert.Equal(2, (await Store.FindUnreferencedBlobsAsync(parts.Select(p => p.Blob.BlobId).ToList(), Ct)).Count);
+        Assert.Equal(parts.Select(p => p.Blob.BlobId).Order(), await ReleasedIdsAsync());
 
         // A multipart upload over a single object hands back the single blob; deleting it hands back every part.
         var second = await CreateUploadAsync(bucket, "a.bin");
@@ -322,7 +324,7 @@ public abstract class MetadataStoreContract : IAsyncLifetime
         Assert.Equal(BucketDeletion.Deleted, deletion.Status);
         Assert.Equal(parts.Select(p => p.Blob).OrderBy(b => b.BlobId), deletion.FreedBlobs.OrderBy(b => b.BlobId));
         Assert.Null(await Store.FindUploadAsync(bucket.Id, upload.Key, upload.UploadId, Ct));
-        Assert.Equal(2, (await Store.FindUnreferencedBlobsAsync(parts.Select(p => p.Blob.BlobId).ToList(), Ct)).Count);
+        Assert.Equal(parts.Select(p => p.Blob.BlobId).Order(), await ReleasedIdsAsync());
     }
 
     [Fact]
@@ -1172,6 +1174,76 @@ public abstract class MetadataStoreContract : IAsyncLifetime
     private static readonly DateTime Timestamp = new(2026, 11, 16, 9, 30, 15, 123, DateTimeKind.Utc);
 
     private static Bucket NewBucket(string name) => new(Guid.CreateVersion7(), name, Timestamp);
+
+    // --- Released blobs (B5a) --------------------------------------------------------------------------------------
+
+    [Fact]
+    public async Task EveryWriteThatReleasesABlob_RecordsIt()
+    {
+        var bucket = await CreateBucketAsync();
+        var overwritten = NewObject(bucket, "a");
+        await Store.CommitObjectAsync(overwritten, CommitCondition.Always, Ct);
+        await Store.CommitObjectAsync(NewObject(bucket, "a"), CommitCondition.Always, Ct); // overwrite
+        var deleted = NewObject(bucket, "b");
+        await Store.CommitObjectAsync(deleted, CommitCondition.Always, Ct);
+        await Store.DeleteObjectAsync(bucket.Id, "b", Ct);
+        var batchDeleted = NewObject(bucket, "c");
+        await Store.CommitObjectAsync(batchDeleted, CommitCondition.Always, Ct);
+        await Store.DeleteObjectsAsync(bucket.Id, ["c"], Ct);
+
+        var upload = await CreateUploadAsync(bucket, "m");
+        var replacedPart = NewPart(upload, 1);
+        await Store.CommitPartAsync(replacedPart, Ct);
+        var part1 = NewPart(upload, 1);
+        await Store.CommitPartAsync(part1, Ct); // replaces part 1
+        var unlisted = NewPart(upload, 2);
+        await Store.CommitPartAsync(unlisted, Ct);
+        await Store.CompleteUploadAsync(Manifest(upload, part1), CommitCondition.Always, Ct);
+
+        var aborted = await CreateUploadAsync(bucket, "x");
+        var abortedPart = NewPart(aborted, 1);
+        await Store.CommitPartAsync(abortedPart, Ct);
+        await Store.AbortUploadAsync(bucket.Id, "x", aborted.UploadId, Ct);
+
+        var empty = NewBucket("empty-with-upload");
+        await Store.TryCreateBucketAsync(empty, Ct);
+        var open = await CreateUploadAsync(empty, "y");
+        var openPart = NewPart(open, 1);
+        await Store.CommitPartAsync(openPart, Ct);
+        await Store.DeleteBucketIfEmptyAsync(empty.Name, Ct);
+
+        var released = await Store.ListReleasedBlobsAsync("node-1", DateTime.UtcNow.AddMinutes(1), 100, Ct);
+        Assert.Equal(
+            new[] { BlobOf(overwritten), BlobOf(deleted), BlobOf(batchDeleted), replacedPart.Blob, unlisted.Blob, abortedPart.Blob, openPart.Blob }
+                .Select(static b => b.BlobId).Order(),
+            released.Select(static b => b.BlobId).Order());
+        Assert.Equal(new RetainedBlobs(7, 42 * 3 + 10 * 4), await Store.GetRetainedBlobsAsync(Ct));
+    }
+
+    [Fact]
+    public async Task ReleasedBlobs_AreListedPerNodeOldestFirst_CountAsReferenced_AndAreForgotten()
+    {
+        var bucket = await CreateBucketAsync();
+        var first = NewObject(bucket, "a");
+        await Store.CommitObjectAsync(first, CommitCondition.Always, Ct);
+        await Store.DeleteObjectAsync(bucket.Id, "a", Ct);
+
+        Assert.Empty(await Store.ListReleasedBlobsAsync("node-2", DateTime.UtcNow.AddMinutes(1), 10, Ct));
+        Assert.Empty(await Store.ListReleasedBlobsAsync("node-1", DateTime.UtcNow.AddDays(-1), 10, Ct));
+        var listed = Assert.Single(await Store.ListReleasedBlobsAsync("node-1", DateTime.UtcNow.AddMinutes(1), 10, Ct));
+        Assert.Equal((BlobOf(first).BlobId, 42L), (listed.BlobId, listed.Size));
+
+        // Waiting for its collector: the orphan sweep must not take it.
+        Assert.Empty(await Store.FindUnreferencedBlobsAsync([BlobOf(first).BlobId], Ct));
+
+        await Store.ForgetReleasedBlobsAsync([BlobOf(first).BlobId], Ct);
+        Assert.Equal(default, await Store.GetRetainedBlobsAsync(Ct));
+        Assert.Equal([BlobOf(first).BlobId], await Store.FindUnreferencedBlobsAsync([BlobOf(first).BlobId], Ct));
+    }
+
+    /// <summary>Ids of every released blob waiting for its collector, ordered.</summary>
+    private async Task<Guid[]> ReleasedIdsAsync() =>
+        [.. (await Store.ListReleasedBlobsAsync("node-1", DateTime.UtcNow.AddYears(1), int.MaxValue, Ct)).Select(static b => b.BlobId).Order()];
 
     private static StoredObject NewObject(Bucket bucket, string key) => new(
         bucket.Id, key, Guid.CreateVersion7(), new SingleBlob(NewBlob(42)),

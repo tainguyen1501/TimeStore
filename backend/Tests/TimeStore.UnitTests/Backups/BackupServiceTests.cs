@@ -15,7 +15,7 @@ public sealed class BackupServiceTests : IAsyncDisposable
     private readonly InMemoryBackupRunStore _runs = new();
     private readonly BackupQueue _queue = new();
     private readonly MemoryBackupTarget _directory = new();
-    private readonly DeferredBlobDeletions _deletions;
+    private readonly BlobCollector _deletions;
     private readonly BackupRunner _runner;
 
     private static readonly BackupOptions Options = new("node-1", ".", "tmp", BackupCompressions.Zstd, 3, 0);
@@ -25,7 +25,7 @@ public sealed class BackupServiceTests : IAsyncDisposable
     public BackupServiceTests()
     {
         var blobs = new RecordingBlobStore();
-        _deletions = new DeferredBlobDeletions(blobs, new Application.Abstractions.BlobDeletionOptions(TimeSpan.Zero), TimeProvider.System);
+        _deletions = new BlobCollector(new InMemoryMetadataStore(), blobs, new Application.Abstractions.BlobDeletionOptions(TimeSpan.Zero), TimeProvider.System);
         _runner = new BackupRunner(_runs, new FakeMetadataSnapshots([]), blobs, _deletions, new TarBackupArchiveFormat(),
             [_directory], Options, TimeProvider.System);
     }

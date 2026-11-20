@@ -12,7 +12,7 @@ public sealed class BucketServiceTests
     private readonly RecordingBlobStore _blobs = new();
     private readonly BucketService _service;
 
-    public BucketServiceTests() => _service = new BucketService(_store, Deletions.Immediate(_blobs), new TimeStore.Infra.Services.Policies.BucketPolicyCache(_store), new FixedTimeProvider());
+    public BucketServiceTests() => _service = new BucketService(_store, Deletions.Immediate(_store, _blobs), new TimeStore.Infra.Services.Policies.BucketPolicyCache(_store), new FixedTimeProvider());
     private readonly CancellationToken _ct = TestContext.Current.CancellationToken;
 
     [Fact]

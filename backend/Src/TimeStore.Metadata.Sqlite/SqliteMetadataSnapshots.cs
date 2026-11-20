@@ -21,11 +21,14 @@ public sealed class SqliteMetadataSnapshots(SqliteConnectionFactory connections)
     private const string Vacuum = "VACUUM INTO $path;";
 
     // Leave out what must not travel: admin session tokens (hashes, still) and the backup history, which describes
-    // the source server (a restored server starts without runs, so none is left running).
+    // the source server (a restored server starts without runs, so none is left running), and replication: a restored
+    // server must not push its older state over a newer replica (rules are created again on purpose).
     private const string Trim = """
         PRAGMA journal_mode = DELETE;
         DELETE FROM admin_sessions;
         DELETE FROM backup_runs;
+        DELETE FROM replication_queue;
+        DELETE FROM replication_rules;
         """;
 
     private const string Referenced = """

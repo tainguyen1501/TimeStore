@@ -80,7 +80,7 @@ public sealed class LifecycleRunnerTests : IAsyncLifetime
 
         Assert.Equal(1, run.Expired);
         Assert.Equal(["keep/b"], await CurrentKeysAsync());
-        Assert.Single(_deletions.Deferred); // the expired object's blob, after the usual grace
+        Assert.Equal(1L, (await _store.GetRetainedBlobsAsync(_ct)).Count); // the expired object's blob, after the usual grace
     }
 
     [Fact]
@@ -121,13 +121,13 @@ public sealed class LifecycleRunnerTests : IAsyncLifetime
         Assert.Equal((1, 0), (first.Expired, first.NoncurrentRemoved));
         Assert.Empty(await CurrentKeysAsync());
         Assert.Equal([true, false], (await VersionsAsync()).Select(v => v.IsDeleteMarker));
-        Assert.Empty(_deletions.Deferred);
+        Assert.Equal(0L, (await _store.GetRetainedBlobsAsync(_ct)).Count);
 
         _clock.Advance(TimeSpan.FromDays(3)); // noncurrent for two full days: removed for good
         var second = await _runner.RunAsync(_ct);
         Assert.Equal(1, second.NoncurrentRemoved);
         Assert.True(Assert.Single(await VersionsAsync()).IsDeleteMarker);
-        Assert.Single(_deletions.Deferred);
+        Assert.Equal(1L, (await _store.GetRetainedBlobsAsync(_ct)).Count);
     }
 
     [Fact]
@@ -179,7 +179,7 @@ public sealed class LifecycleRunnerTests : IAsyncLifetime
         _clock.Advance(TimeSpan.FromDays(2));
         Assert.Equal(1, (await _runner.RunAsync(_ct)).UploadsAborted);
         Assert.Null(await _store.FindUploadAsync(_bucket.Id, "big.bin", upload.UploadId, _ct));
-        Assert.Single(_deletions.Deferred);
+        Assert.Equal(1L, (await _store.GetRetainedBlobsAsync(_ct)).Count);
     }
 
     [Fact]
@@ -194,16 +194,17 @@ public sealed class LifecycleRunnerTests : IAsyncLifetime
         Assert.Equal(["a"], await CurrentKeysAsync());
     }
 
+    /// <summary>Counts release reports; the released blobs themselves are recorded by the store (retained blobs).</summary>
     private sealed class RecordingDeletions : IBlobDeletions
     {
-        public List<BlobLocator> Deferred { get; } = [];
+        public int Reports { get; private set; }
 
-        public ValueTask DeferAsync(IEnumerable<BlobLocator> blobs)
+        public ValueTask ReleasedAsync()
         {
-            Deferred.AddRange(blobs);
+            Reports++;
             return ValueTask.CompletedTask;
         }
 
-        public bool IsPending(Guid blobId) => Deferred.Any(b => b.BlobId == blobId);
+        public ValueTask<int> CollectAsync() => ValueTask.FromResult(0);
     }
 }

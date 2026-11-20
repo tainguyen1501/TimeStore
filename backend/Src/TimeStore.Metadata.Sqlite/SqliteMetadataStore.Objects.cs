@@ -1,6 +1,8 @@
 using Microsoft.Data.Sqlite;
 using TimeStore.Domain.Blobs;
 using TimeStore.Domain.Objects;
+using TimeStore.Domain.Replication;
+using TimeStore.Primitives;
 
 namespace TimeStore.Metadata.Sqlite;
 
@@ -21,7 +23,8 @@ public sealed partial class SqliteMetadataStore
     public async ValueTask<ObjectCommit> CommitObjectAsync(
         StoredObject stored, CommitCondition condition, CancellationToken ct)
     {
-        return await writer.WriteAsync(async (connection, transaction) =>
+        var queued = 0;
+        var commit = await writer.WriteAsync(async (connection, transaction) =>
         {
             if (stored.Data is not SingleBlob)
                 throw new ArgumentException("Multipart objects are committed by CompleteUploadAsync.", nameof(stored));
@@ -35,8 +38,12 @@ public sealed partial class SqliteMetadataStore
                 return new ObjectCommit(CommitStatus.ConditionFailed, Replaced: null);
 
             var (released, version) = await CommitVersionAsync(connection, transaction, stored, current, versioning, ct);
+            await ReleaseBlobsAsync(connection, transaction, released?.Blobs, ct);
+            queued = await QueueChangeAsync(connection, transaction, stored.BucketId, stored.Key, ReplicationOperation.Put, _clock.UtcNowMs, ct);
             return new ObjectCommit(CommitStatus.Committed, released, version);
         });
+        SignalReplication(queued);
+        return commit;
     }
 
     /// <summary>Deletes the latest (a delete marker in a versioned bucket); returns data no version references.</summary>

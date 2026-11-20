@@ -113,9 +113,26 @@ public interface IMetadataStore
 
     /// <summary>
     /// The ids in <paramref name="blobIds"/> that no metadata row references (orphan sweep). The one place that knows
-    /// every table holding blob references (objects, object_parts, upload_parts; versions in phase 6 must be added).
+    /// every table holding blob references (objects, object_parts, object_versions, upload_parts) and the released blobs
+    /// still waiting in <c>pending_blob_deletions</c> (they are deleted only by their collector).
     /// </summary>
     ValueTask<IReadOnlyList<Guid>> FindUnreferencedBlobsAsync(IReadOnlyList<Guid> blobIds, CancellationToken ct);
+
+    // --- Released blobs (B5a) --------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// Released blobs of <paramref name="nodeId"/> released at or before <paramref name="releasedBefore"/>, oldest
+    /// first, at most <paramref name="limit"/>. Every write that releases a blob (an overwrite, a delete, a replaced or
+    /// aborted part, a bucket deleted with open uploads) records it in the same transaction as its commit.
+    /// </summary>
+    ValueTask<IReadOnlyList<ReleasedBlob>> ListReleasedBlobsAsync(
+        string nodeId, DateTime releasedBefore, int limit, CancellationToken ct);
+
+    /// <summary>Forgets released blobs whose files were deleted.</summary>
+    ValueTask ForgetReleasedBlobsAsync(IReadOnlyList<Guid> blobIds, CancellationToken ct);
+
+    /// <summary>Released blobs still waiting, and their bytes.</summary>
+    ValueTask<RetainedBlobs> GetRetainedBlobsAsync(CancellationToken ct);
 
     // --- Access keys -----------------------------------------------------------------------------------------------
 

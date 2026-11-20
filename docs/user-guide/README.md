@@ -9,6 +9,7 @@ End-user documentation for running TimeStore and using its admin UI. Pages are a
 - [Browsing objects](objects.md): folders, details, upload, download, delete.
 - [Overview and metrics](metrics.md): storage, disk, request rates, latency.
 - [Backups](backups.md): a backup key, a first backup, checking the file, a test restore.
+- [Replication](replication.md): copy every change of a bucket to another S3 endpoint.
 
 The admin UI has the navigation on the left (Dashboard, Buckets, Access Keys, Metrics, Guide, Settings), the page
 in the middle, and on wide screens a panel on the right with the signed-in key, the light/dark switch and the

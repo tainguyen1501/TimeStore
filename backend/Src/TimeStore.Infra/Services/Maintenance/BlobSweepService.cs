@@ -13,7 +13,7 @@ namespace TimeStore.Infra.Services.Maintenance;
 /// never get one (blob ids are never reused). The metadata store is the only authority on references.
 /// </summary>
 public sealed class BlobSweepService(
-    IBlobStore blobs, IMetadataStore store, IBlobDeletions deletions, BlobSweepOptions options, TimeProvider clock)
+    IBlobStore blobs, IMetadataStore store, BlobSweepOptions options, TimeProvider clock)
     : IBlobSweepService, IDisposable
 {
     private const int BatchSize = 500;
@@ -54,8 +54,8 @@ public sealed class BlobSweepService(
                 var unreferenced = (await store.FindUnreferencedBlobsAsync(batch.ConvertAll(b => b.BlobId), ct)).ToHashSet();
                 foreach (var file in batch)
                 {
-                    // Pending: released by a commit seconds ago, still readable by GETs in flight; deleted on schedule.
-                    if (!unreferenced.Contains(file.BlobId) || deletions.IsPending(file.BlobId))
+                    // Released blobs count as referenced (pending_blob_deletions): their collector deletes them.
+                    if (!unreferenced.Contains(file.BlobId))
                         continue;
                     await blobs.DeleteAsync(file.BlobId, ct);
                     deleted++;
