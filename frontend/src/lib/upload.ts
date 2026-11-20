@@ -46,7 +46,9 @@ export async function uploadFile(
   const count = Math.ceil(file.size / size)
   const loaded = new Array<number>(count).fill(0)
   const report = () => onProgress(loaded.reduce((sum, n) => sum + n, 0))
-  const uploadId = await withRetry(() => objectService.startUpload(bucket, key, file.type), { signal })
+  const uploadId = await withRetry(() => objectService.startUpload(bucket, key, file.type), {
+    signal,
+  })
 
   try {
     const parts = new Array<{ partNumber: number; eTag: string }>(count)

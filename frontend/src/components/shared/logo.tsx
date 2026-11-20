@@ -14,7 +14,11 @@ const BOLT = "M13.2 9.2 9.7 14.2h2.6l-0.9 3.6 3.6-5h-2.6z"
 export function LogoMark({ className }: { className?: string }) {
   const clip = `logo-${useId().replace(/[^a-zA-Z0-9-]/g, "")}`
   return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" className={cn("shrink-0 overflow-visible", className)}>
+    <svg
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      className={cn("shrink-0 overflow-visible", className)}
+    >
       <defs>
         <clipPath id={clip}>
           <path d={BUCKET} />
@@ -26,7 +30,13 @@ export function LogoMark({ className }: { className?: string }) {
       </g>
       <ellipse cx="12" cy="6.5" rx="8.5" ry="2.4" fill="var(--logo-rim)" />
       <ellipse cx="12" cy="6.6" rx="6.9" ry="1.45" fill="var(--logo-opening)" />
-      <path d="M6.3 10.2 7.3 17" fill="none" stroke="var(--logo-rim)" strokeWidth="1" strokeLinecap="round" />
+      <path
+        d="M6.3 10.2 7.3 17"
+        fill="none"
+        stroke="var(--logo-rim)"
+        strokeWidth="1"
+        strokeLinecap="round"
+      />
       <path d={BOLT} fill="var(--primary)" />
     </svg>
   )

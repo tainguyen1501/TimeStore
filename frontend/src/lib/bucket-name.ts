@@ -36,7 +36,8 @@ export function bucketNameProblem(name: string): string | null {
   if (!LETTER_OR_DIGIT.test(name[0]) || !LETTER_OR_DIGIT.test(name[name.length - 1]))
     return "Start and end with a letter or a digit."
   if (IPV4.test(name)) return "A bucket name cannot look like an IP address."
-  if (name.startsWith(RESERVED_PREFIX)) return `Names starting with "${RESERVED_PREFIX}" are reserved.`
+  if (name.startsWith(RESERVED_PREFIX))
+    return `Names starting with "${RESERVED_PREFIX}" are reserved.`
   if (name.endsWith(RESERVED_SUFFIX)) return `Names ending with "${RESERVED_SUFFIX}" are reserved.`
   return null
 }

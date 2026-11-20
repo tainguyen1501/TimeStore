@@ -140,7 +140,9 @@ function DiskPart({
         {children}
         <span className="truncate">{label}</span>
       </dt>
-      <dd className="mt-0.5 font-semibold text-subtle-foreground tabular-nums">{formatBytes(value)}</dd>
+      <dd className="mt-0.5 font-semibold text-subtle-foreground tabular-nums">
+        {formatBytes(value)}
+      </dd>
     </div>
   )
 }
@@ -227,7 +229,10 @@ function StorageDetails() {
             </span>
           </DiskPart>
           <DiskPart label="Other files" value={disk.otherFiles}>
-            <span className="size-2.5 rounded-full" style={{ backgroundColor: OTHER_FILES_COLOR }} />
+            <span
+              className="size-2.5 rounded-full"
+              style={{ backgroundColor: OTHER_FILES_COLOR }}
+            />
           </DiskPart>
           <DiskPart label="Free" value={disk.free}>
             <span className="size-2.5 rounded-full bg-muted" />

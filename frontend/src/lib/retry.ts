@@ -40,7 +40,10 @@ export function sleep(ms: number, signal?: AbortSignal): Promise<void> {
  */
 export async function withRetry<T>(
   attempt: () => Promise<T>,
-  { signal, onRetry }: { signal?: AbortSignal; onRetry?: (retry: number, error: unknown) => void } = {}
+  {
+    signal,
+    onRetry,
+  }: { signal?: AbortSignal; onRetry?: (retry: number, error: unknown) => void } = {}
 ): Promise<T> {
   for (let retry = 0; ; retry++) {
     try {
