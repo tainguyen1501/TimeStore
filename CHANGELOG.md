@@ -108,7 +108,8 @@ The first public release, 0.1.0. A single-node, S3-compatible object storage ser
 ### Known limits
 
 - Single node only; replication across nodes is planned (`docs/roadmap.md`, phase 8).
-- No server-side encryption, object lock, object tags, bucket replication, or IAM users and groups.
+- No server-side encryption, object lock, object tags, or IAM users and groups. Bucket replication copies only the
+  current state of each key, not every version.
 - Lifecycle rules cannot transition objects to other storage classes (there is only `STANDARD`).
 - The admin port should stay on loopback or behind a TLS proxy (`AdminAddress`, `Admin:SecureCookies`;
   `docs/configuration.md`).
