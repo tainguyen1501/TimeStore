@@ -181,7 +181,7 @@ always sorts after the key's newest (`VersionOrder.Next`). Writes read `buckets.
 `STRICT`. Parsed policies are cached per bucket name in memory (`BucketPolicyCache`) and dropped on PUT, DELETE and
 bucket deletion.
 
-### `backup_runs` (v10; v11 drops `include_master_key`)
+### `backup_runs` (v10; v11 drops `include_master_key`; v14 adds `content`)
 
 | Column | Type | Notes |
 |---|---|---|
@@ -195,6 +195,7 @@ bucket deletion.
 | `blobs_total`, `blobs_done`, `bytes_total`, `bytes_done` | INTEGER | Progress (written every 2 s) |
 | `archive_name`, `archive_size`, `archive_sha256` | TEXT, INTEGER, TEXT | Set at start (name) and on success |
 | `error_code`, `error_message` | TEXT | Why it did not succeed (an `AppError` code; message ≤ 1024 characters) |
+| `content` | TEXT | `full` (metadata and blobs) or `metadata` (the metadata only); CHECK, default `full` |
 
 `STRICT`. `ux_backup_runs_active`: a partial unique index (`WHERE status IN ('queued', 'running')`, one constant key)
 allows at most one active run; an insert that hits it means "a backup is already active". Running rows are marked

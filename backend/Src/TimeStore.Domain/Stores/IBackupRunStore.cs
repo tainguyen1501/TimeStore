@@ -19,6 +19,9 @@ public interface IBackupRunStore
     /// <summary>Queued runs, oldest first (the worker wakes them again after a restart).</summary>
     ValueTask<IReadOnlyList<Guid>> ListQueuedBackupRunIdsAsync(CancellationToken ct);
 
+    /// <summary>True when a run already carries <paramref name="archiveName"/> (its archive may since be deleted).</summary>
+    ValueTask<bool> IsBackupArchiveNameUsedAsync(string archiveName, CancellationToken ct);
+
     /// <summary>Queued → running with its archive name; false when the run is not queued (cancelled, taken).</summary>
     ValueTask<bool> TryStartBackupRunAsync(Guid runId, string archiveName, DateTime startedAt, CancellationToken ct);
 

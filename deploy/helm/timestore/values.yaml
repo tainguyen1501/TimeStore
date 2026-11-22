@@ -80,6 +80,11 @@ restore:
   # init container can read. Not /data/backups: a restore fills an empty data volume, where that folder is gone. A
   # presigned URL is a credential: keep it out of Git (TimeOps stores Values encrypted) and let it expire.
   archive: ""
+  # A metadata-only backup put back onto THIS data volume (it keeps its blobs: blobs.retainDeletedDays): the server goes
+  # back to the backup's instant. Every blob it references is checked first; when some are gone, nothing changes and
+  # the pod stays in Init:Error (the log names them). Applied once per archive (--once): restarts do not apply it
+  # again; remove it after the check anyway. Not together with archive. An http(s) URL, as above.
+  metadataArchive: ""
 
 # More environment variables, e.g. { name: TimeStore__Multipart__AbandonAfterDays, value: "3" }.
 extraEnv: []

@@ -51,6 +51,20 @@ public sealed class BackupServiceTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task AMetadataOnlyBackup_NeedsABlobRetention_AndAKnownContent()
+    {
+        var withoutRetention = await Service().StartAsync(new StartBackupRequest(Content: BackupContents.Metadata), Admin, _ct);
+        Assert.Equal(BackupErrors.Codes.RetentionRequired, withoutRetention.Error.Code);
+        Assert.Equal(BackupErrors.Codes.InvalidContent,
+            (await Service().StartAsync(new StartBackupRequest(Content: "blobs"), Admin, _ct)).Error.Code);
+
+        var retained = new BackupService(_runs, _runner, _queue, [_directory], Options with { BlobRetention = TimeSpan.FromDays(8) },
+            TimeProvider.System);
+        var started = await retained.StartAsync(new StartBackupRequest(Content: BackupContents.Metadata), Admin, _ct);
+        Assert.Equal(BackupContents.Metadata, started.Value.Content);
+    }
+
+    [Fact]
     public async Task Start_WhileOneIsActive_IsRefused()
     {
         var service = Service();

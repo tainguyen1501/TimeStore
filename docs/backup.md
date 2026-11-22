@@ -81,8 +81,9 @@ request starts, so a download that runs for hours is fine.
 ### Back up to the backup folder
 
 Start a backup from the admin API; the server's backup worker writes the archive to `<DataPath>/backups`
-(`TimeStore:Backup:Path` moves it), as `<name>.partial` renamed when complete. The folder is readable by the server's
-user only. It is where archives are **taken from**, not where they are kept: it sits on the data disk, so it does not
+(`TimeStore:Backup:Path` moves it), as `<name>.partial` renamed when complete. The name is
+`timestore-<node>-<yyyyMMddTHHmmssZ>.tar.zst`; a later archive of the same second (a metadata-only backup takes
+milliseconds) gets `-2`, `-3`, ... before the extension. The folder is readable by the server's user only. It is where archives are **taken from**, not where they are kept: it sits on the data disk, so it does not
 survive the disk. Download the archive, keep it elsewhere, then delete it:
 
 ```bash
@@ -142,6 +143,45 @@ volume, which a restore starts empty): an empty data claim is restored before th
 left alone. The Helm chart's README has the steps (a new cluster, in place, side by side) and the
 manual way with a Job
 ([deploy/helm/timestore/README.md](../deploy/helm/timestore/README.md)).
+
+### Metadata-only backups (undo to a point in time)
+
+With `Blobs:RetainDeletedDays` above 0, overwritten and deleted blobs stay on disk for that many days, so a backup of
+the **metadata alone** can put the server back at its instant: a small file, taken in seconds, as often as you like
+(hourly, for example). It protects against mistakes on a server whose disk is intact (a bucket deleted by error, an
+application that overwrote everything); it is not a copy of the data, so a lost disk still needs a full archive or
+[replication](user-guide/replication.md). Keep metadata backups for less time than the retention (kept 30 days:
+`RetainDeletedDays` 35).
+
+```bash
+curl -s "${SIGN[@]}" -H 'Content-Type: application/json' -d '{"content":"metadata"}' "$ADMIN/api/v1/backups"
+curl -fsS "${SIGN[@]}" -OJ "$ADMIN/api/v1/backups/stream?content=metadata"      # or streamed
+```
+
+Refused with `BACKUP_RETENTION_REQUIRED` while the retention is 0. The archive holds `manifest.json` (with
+`"content": "metadata"`, the blobs it references and the retention), `metadata.db` and `blobs.sha256`; it holds no
+blob, and taking it holds no blob deletion.
+
+**Restore it** onto the data directory it came from, with the server stopped:
+
+```bash
+TimeStore.Server restore --metadata --archive timestore-node-1-20261120T030000Z.tar.zst --data-path /srv/timestore/data
+```
+
+1. It refuses while a server runs on the directory (`BACKUP_RESTORE_IN_USE`: the server holds `.timestore-lock`),
+   and refuses a full archive (`BACKUP_RESTORE_WRONG_CONTENT`).
+2. It checks the archive, then **every blob the restored metadata references** (present, same size). When some are
+   gone (deleted after the retention) it names them and changes nothing (`BACKUP_RESTORE_MISSING_BLOBS`);
+   `--allow-missing` restores anyway, and those objects fail to read.
+3. It moves the current `metadata.db` (with its `-wal` and `-shm`) to `metadata-before-restore-<time>/` (`-2`, ... for a
+   second restore of the same second) in the data directory, puts the restored one in place and records the archive in `.timestore-restored-metadata`. Delete the
+   `metadata-before-restore-…` folder once the server is checked.
+
+Everything written after the backup's instant is undone: objects written later are gone (their blobs are orphans the
+sweep removes), objects deleted later are back. `--once` skips an archive already restored there: what the Helm
+chart's `restore.metadataArchive` runs in an init container. While it swaps, the directory holds
+`.timestore-restore-metadata`; a restore cut there is run again, and the server refuses to start meanwhile. Like a
+full restore, it brings back no admin session, backup history or replication rule.
 
 ## Copy the data directory yourself
 

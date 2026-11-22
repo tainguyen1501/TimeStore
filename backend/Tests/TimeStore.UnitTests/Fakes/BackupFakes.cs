@@ -37,6 +37,12 @@ internal sealed class InMemoryBackupRunStore : IBackupRunStore
             return ValueTask.FromResult<IReadOnlyList<BackupRun>>(_runs.Values.OrderByDescending(r => r.Id).Take(limit).ToArray());
     }
 
+    public ValueTask<bool> IsBackupArchiveNameUsedAsync(string archiveName, CancellationToken ct)
+    {
+        lock (_runs)
+            return ValueTask.FromResult(_runs.Values.Any(r => r.ArchiveName == archiveName));
+    }
+
     public ValueTask<IReadOnlyList<Guid>> ListQueuedBackupRunIdsAsync(CancellationToken ct)
     {
         lock (_runs)
@@ -164,10 +170,14 @@ internal sealed class MemoryBackupTarget(string type = BackupTargetTypes.Directo
 
     public long? AvailableBytes() => FreeBytes;
 
-    // Newest first, as the directory lists them; archive names carry their instant, so they sort by time.
+    private readonly Dictionary<string, long> _committed = new(StringComparer.Ordinal);
+
+    // Newest first, as the directory lists them (by modification time): committed archives in commit order, after the
+    // ones a test put in Archives directly (older, by name). Names alone do not sort by time: "…Z-2.tar.zst" < "…Z.tar.zst".
     public ValueTask<IReadOnlyList<StoredBackupArchive>> ListAsync(CancellationToken ct) =>
         ValueTask.FromResult<IReadOnlyList<StoredBackupArchive>>(
-            Archives.OrderByDescending(a => a.Key, StringComparer.Ordinal)
+            Archives.OrderByDescending(a => _committed.GetValueOrDefault(a.Key, -1))
+                .ThenByDescending(a => a.Key, StringComparer.Ordinal)
                 .Select(a => new StoredBackupArchive(a.Key, a.Value.Length, DateTime.UnixEpoch)).ToArray());
 
     public ValueTask<Stream?> OpenReadAsync(string archiveName, CancellationToken ct) =>
@@ -192,7 +202,10 @@ internal sealed class MemoryBackupTarget(string type = BackupTargetTypes.Directo
 
         public ValueTask CommitAsync(CancellationToken ct)
         {
-            owner.Archives[name] = _stream.ToArray();
+            // As the directory target: a commit never replaces an archive.
+            if (!owner.Archives.TryAdd(name, _stream.ToArray()))
+                throw new IOException($"The archive '{name}' already exists.");
+            owner._committed[name] = owner._committed.Count;
             _committed = true;
             return ValueTask.CompletedTask;
         }

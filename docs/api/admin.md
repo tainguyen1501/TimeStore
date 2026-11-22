@@ -182,17 +182,18 @@ access key with the `backup` or `admin` role; reads included, since an archive i
 
 | Method | Path | Body | Success | Errors |
 |---|---|---|---|---|
-| POST | `/api/v1/backups` | `{ "target"?: "directory", "compression"?: "zstd" \| "none" }` | `202 BackupRunResponse` (queued), `Location` | 400 `BACKUP_INVALID_TARGET`, `BACKUP_INVALID_COMPRESSION`, `BACKUP_TARGET_NOT_CONFIGURED`; 409 `BACKUP_ACTIVE` |
+| POST | `/api/v1/backups` | `{ "target"?: "directory", "compression"?: "zstd" \| "none", "content"?: "full" \| "metadata" }` | `202 BackupRunResponse` (queued), `Location` | 400 `BACKUP_INVALID_TARGET`, `BACKUP_INVALID_COMPRESSION`, `BACKUP_INVALID_CONTENT`, `BACKUP_RETENTION_REQUIRED` (metadata only while `Blobs:RetainDeletedDays` is 0), `BACKUP_TARGET_NOT_CONFIGURED`; 409 `BACKUP_ACTIVE` |
 | GET | `/api/v1/backups` | — | `200 BackupRunResponse[]` (newest first, at most 100) | — |
 | GET | `/api/v1/backups/{id}` | — | `200 BackupRunResponse` | 404 `BACKUP_NOT_FOUND` |
 | POST | `/api/v1/backups/{id}/cancel` | — | `200 BackupRunResponse` (queued: cancelled at once; running: stops at its next blob, poll for the end) | 404, 409 `BACKUP_NOT_ACTIVE` |
 | GET | `/api/v1/backups/{id}/archive` | — | `200` the archive (`application/zstd` or `application/x-tar`, `Content-Disposition: attachment`, `no-store`) | 404 `BACKUP_NOT_FOUND`, `BACKUP_ARCHIVE_NOT_FOUND` |
 | DELETE | `/api/v1/backups/{id}/archive` | — | `204` the archive is deleted from the backup folder; the run stays | 404 `BACKUP_NOT_FOUND`, `BACKUP_ARCHIVE_NOT_FOUND` |
-| GET | `/api/v1/backups/stream?compression=` | — | `200` the archive, written while the backup runs; nothing is kept on the server | 400 `BACKUP_INVALID_COMPRESSION`, 409 `BACKUP_ACTIVE` |
+| GET | `/api/v1/backups/stream?compression=&content=` | — | `200` the archive, written while the backup runs; nothing is kept on the server | 400 `BACKUP_INVALID_COMPRESSION`, 409 `BACKUP_ACTIVE` |
 
 `BackupRunResponse`: `{ "id", "status", "trigger", "target", "compression", "startedBy",
 "queuedAt", "startedAt"?, "finishedAt"?, "snapshotAt"?, "blobsTotal", "blobsDone", "bytesTotal", "bytesDone",
-"archiveName"?, "archiveSize"?, "archiveSha256"?, "errorCode"?, "errorMessage"? }`.
+"archiveName"?, "archiveSize"?, "archiveSha256"?, "errorCode"?, "errorMessage"?, "content" }` (`full` or `metadata`:
+the metadata only, no blob; docs/backup.md "Metadata-only backups").
 
 - **Status:** `queued` → `running` → `succeeded` | `failed` | `cancelled` | `interrupted` (the server stopped or the
   streaming client disconnected; never re-run automatically). At most one run is queued or running.

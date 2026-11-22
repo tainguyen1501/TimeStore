@@ -241,6 +241,93 @@ public sealed class BackupRunnerTests : IAsyncLifetime
         Assert.Equal(BackupStatus.Queued, (await _runs.FindBackupRunAsync(queued.Id, _ct))!.Status);
     }
 
+    [Fact]
+    public async Task AMetadataOnlyRun_ArchivesNoBlob_HoldsNothing_AndRecordsWhatItReferences()
+    {
+        var blobs = new[] { await BlobAsync("one"), await BlobAsync("two two") };
+        var snapshots = new FakeMetadataSnapshots(blobs) { OnCreate = () => Assert.False(_deletions.IsHeld) };
+        var runner = new BackupRunner(_runs, snapshots, _blobs, _deletions, _format, [_target],
+            Options() with { BlobRetention = TimeSpan.FromDays(8) }, TimeProvider.System);
+        var run = BackupRun.Queue(BackupTriggers.Manual, BackupTargetTypes.Directory, BackupCompressions.Zstd, "root",
+            DateTime.UtcNow, BackupContents.Metadata);
+        Assert.True(await _runs.TryCreateBackupRunAsync(run, _ct));
+
+        var execution = await runner.RunAsync(run.Id, _target, _ct);
+
+        Assert.Null(execution!.Error);
+        Assert.Equal((BackupStatus.Succeeded, BackupContents.Metadata), (execution.Run.Status, execution.Run.Content));
+        Assert.Equal(BackupProgress.None, execution.Run.Progress);
+        var names = new List<string>();
+        BackupManifest? manifest = null;
+        await using (var reader = await _format.OpenReaderAsync(new MemoryStream(_target.Archives[execution.Run.ArchiveName!]), _ct))
+        {
+            while (await reader.NextAsync(_ct) is { } entry)
+            {
+                names.Add(entry.Name);
+                using var bytes = new MemoryStream();
+                await entry.CopyToAsync(bytes, _ct);
+                if (entry.Name == BackupLayout.ManifestEntry)
+                    manifest = _format.ParseManifest(bytes.ToArray());
+            }
+        }
+
+        Assert.Equal([BackupLayout.ManifestEntry, BackupLayout.MetadataEntry, BackupLayout.ChecksumsEntry], names);
+        Assert.Equal((BackupContents.Metadata, 0L, 2L, 10L, 8), (manifest!.Content, manifest.Blobs, manifest.ReferencedBlobs,
+            manifest.ReferencedBytes, manifest.RetainDeletedDays));
+    }
+
+    [Theory]
+    [InlineData(10)]
+    [InlineData(1)]
+    public async Task RunsOfTheSameSecond_GetArchivesOfTheirOwn_AndKeepLeavesTheNewest(int keep)
+    {
+        var runner = new BackupRunner(_runs, new FakeMetadataSnapshots([await BlobAsync("x")]), _blobs, _deletions, _format,
+            [_target], Options(keep: keep), new FixedTimeProvider());
+
+        var first = await runner.RunAsync((await QueueAsync()).Id, _target, _ct);
+        var second = await runner.RunAsync((await QueueAsync()).Id, _target, _ct);
+        var third = await runner.RunAsync((await QueueAsync()).Id, _target, _ct);
+
+        Assert.Equal(
+            [BackupStatus.Succeeded, BackupStatus.Succeeded, BackupStatus.Succeeded],
+            [first!.Run.Status, second!.Run.Status, third!.Run.Status]);
+        Assert.Equal(
+            ["timestore-node-1-20261116T093015Z.tar.zst", "timestore-node-1-20261116T093015Z-2.tar.zst",
+                "timestore-node-1-20261116T093015Z-3.tar.zst"],
+            [first.Run.ArchiveName, second.Run.ArchiveName, third.Run.ArchiveName]);
+        if (keep == 1) // the names Keep freed stay with their runs
+            Assert.Equal([third.Run.ArchiveName], _target.Archives.Keys);
+        else
+            Assert.Equal(3, _target.Archives.Count);
+    }
+
+    [Fact]
+    public async Task TwoMetadataRestoresOfTheSameSecond_KeepBothReplacedDatabases()
+    {
+        var runner = new BackupRunner(_runs, new FakeMetadataSnapshots([]), _blobs, _deletions, _format, [_target],
+            Options() with { BlobRetention = TimeSpan.FromDays(1) }, TimeProvider.System);
+        var run = BackupRun.Queue(BackupTriggers.Manual, BackupTargetTypes.Directory, BackupCompressions.Zstd, "root",
+            DateTime.UtcNow, BackupContents.Metadata);
+        Assert.True(await _runs.TryCreateBackupRunAsync(run, _ct));
+        var execution = await runner.RunAsync(run.Id, _target, _ct);
+        var archive = Path.Combine(_root, execution!.Run.ArchiveName!);
+        await File.WriteAllBytesAsync(archive, _target.Archives[execution.Run.ArchiveName!], _ct);
+        var database = Path.Combine(DataPath, BackupLayout.MetadataEntry);
+        await File.WriteAllTextAsync(database, "before", _ct);
+        var restorer = new MetadataRestorer(_format, new NoReferencedBlobs(), _blobs);
+        var request = new MetadataRestoreRequest(archive, DataPath, int.MaxValue);
+        var now = FixedTimeProvider.Default.UtcDateTime;
+
+        var first = await restorer.RestoreAsync(request, now, _ct);
+        var second = await restorer.RestoreAsync(request, now, _ct);
+
+        Assert.True(first.IsSuccess && second.IsSuccess);
+        Assert.NotEqual(first.Value.PreviousCopy, second.Value.PreviousCopy);
+        Assert.Equal("before", await File.ReadAllTextAsync(Path.Combine(first.Value.PreviousCopy!, BackupLayout.MetadataEntry), _ct));
+        Assert.Equal(FakeMetadataSnapshots.Database, await File.ReadAllBytesAsync(database, _ct));
+        Assert.False(File.Exists(Path.Combine(DataPath, MetadataRestorer.InProgressMarker)));
+    }
+
     // --- Helpers ---------------------------------------------------------------------------------------------------
 
     private BackupRunner Runner(FakeMetadataSnapshots snapshots, long minFreeBytes = 0, int keep = BackupOptions.DefaultKeep) =>
@@ -266,6 +353,12 @@ public sealed class BackupRunnerTests : IAsyncLifetime
         using var copy = new MemoryStream();
         await stream.CopyToAsync(copy, _ct);
         return copy.ToArray();
+    }
+
+    private sealed class NoReferencedBlobs : Domain.Stores.IMetadataFiles
+    {
+        public IAsyncEnumerable<Domain.Stores.ReferencedBlob> ListReferencedBlobsAsync(string path, CancellationToken ct) =>
+            AsyncEnumerable.Empty<Domain.Stores.ReferencedBlob>();
     }
 
     private async Task<Primitives.Result<RestoreSummary>> Restore(byte[] archive, string dataPath)

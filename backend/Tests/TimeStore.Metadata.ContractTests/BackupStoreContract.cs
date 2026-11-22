@@ -66,6 +66,19 @@ public abstract class BackupStoreContract : IAsyncLifetime
     }
 
     [Fact]
+    public async Task IsBackupArchiveNameUsed_OnceARunStartedWithIt()
+    {
+        var run = Queued();
+        await Runs.TryCreateBackupRunAsync(run, Ct);
+        Assert.False(await Runs.IsBackupArchiveNameUsedAsync("timestore-node-1.tar.zst", Ct));
+
+        await Runs.TryStartBackupRunAsync(run.Id, "timestore-node-1.tar.zst", Now, Ct);
+
+        Assert.True(await Runs.IsBackupArchiveNameUsedAsync("timestore-node-1.tar.zst", Ct));
+        Assert.False(await Runs.IsBackupArchiveNameUsedAsync("timestore-node-1-2.tar.zst", Ct));
+    }
+
+    [Fact]
     public async Task TryStartBackupRun_OnlyFromQueued()
     {
         var run = Queued();

@@ -1,14 +1,23 @@
+using TimeStore.Blob.FileSystem;
 using TimeStore.Infra.Backups;
+using TimeStore.Metadata.Sqlite;
 using TimeStore.Metadata.Sqlite.Schema;
 
 namespace TimeStore.Server;
 
 /// <summary>
-/// <c>TimeStore.Server restore --archive &lt;file or URL&gt; [--data-path &lt;dir&gt;] [--if-empty]</c>: restores a backup into an empty data directory with the server stopped (docs/backup.md). With
-/// <c>--if-empty</c> a directory that already holds data is left alone (exit code 0): what the Helm chart's init
-/// container runs at every start for <c>restore.archive</c>. The data path defaults to the
-/// server's (<c>TimeStore:DataPath</c>), so a restore Job can share the server's environment. The master key is not
-/// part of an archive: the restored server uses the key of its configuration.
+/// <c>TimeStore.Server restore --archive &lt;file or URL&gt; [--data-path &lt;dir&gt;] [--if-empty]</c>: restores a full
+/// backup into an empty data directory with the server stopped (docs/backup.md). With <c>--if-empty</c> a directory
+/// that already holds data is left alone (exit code 0): what the Helm chart's init container runs at every start for
+/// <c>restore.archive</c>.
+/// <para>
+/// <c>restore --metadata --archive &lt;file or URL&gt; [--data-path &lt;dir&gt;] [--once] [--allow-missing]</c>: puts the
+/// metadata of a metadata-only backup back onto the data directory it came from (docs/research/blob-retention.md). The
+/// server must be stopped; every blob the backup references is checked first, and nothing changes when some are gone.
+/// With <c>--once</c> an archive already restored there is skipped (the chart's <c>restore.metadataArchive</c>).
+/// </para>
+/// The data path defaults to the server's (<c>TimeStore:DataPath</c>). The master key is not part of an archive: the
+/// restored server uses the key of its configuration.
 /// </summary>
 internal static class RestoreCommand
 {
@@ -16,6 +25,9 @@ internal static class RestoreCommand
     private const string ArchiveOption = "--archive";
     private const string DataPathOption = "--data-path";
     private const string IfEmptyOption = "--if-empty";
+    private const string MetadataOption = "--metadata";
+    private const string OnceOption = "--once";
+    private const string AllowMissingOption = "--allow-missing";
     private const int Success = 0;
     private const int Failure = 1;
     private const int Usage = 2;
@@ -26,13 +38,23 @@ internal static class RestoreCommand
     {
         string? archive = null;
         var dataPath = options.DataPath;
-        var ifEmpty = false;
+        bool ifEmpty = false, metadata = false, once = false, allowMissing = false;
         for (var i = 1; i < args.Length; i++)
         {
-            if (args[i] == IfEmptyOption)
+            switch (args[i])
             {
-                ifEmpty = true;
-                continue;
+                case IfEmptyOption:
+                    ifEmpty = true;
+                    continue;
+                case MetadataOption:
+                    metadata = true;
+                    continue;
+                case OnceOption:
+                    once = true;
+                    continue;
+                case AllowMissingOption:
+                    allowMissing = true;
+                    continue;
             }
 
             if (i + 1 >= args.Length)
@@ -52,7 +74,18 @@ internal static class RestoreCommand
 
         if (string.IsNullOrWhiteSpace(archive))
             return PrintUsage($"{ArchiveOption} is required.");
+        if (metadata && ifEmpty)
+            return PrintUsage($"{IfEmptyOption} is for full restores; a metadata restore uses {OnceOption}.");
+        if (!metadata && (once || allowMissing))
+            return PrintUsage($"{OnceOption} and {AllowMissingOption} need {MetadataOption}.");
 
+        return metadata
+            ? await RestoreMetadataAsync(archive, dataPath, options, once, allowMissing)
+            : await RestoreFullAsync(archive, dataPath, ifEmpty);
+    }
+
+    private static async Task<int> RestoreFullAsync(string archive, string dataPath, bool ifEmpty)
+    {
         var restorer = new BackupRestorer(new TarBackupArchiveFormat());
         var result = await restorer.RestoreAsync(
             new RestoreRequest(archive, dataPath, SqliteMetadataInitializer.LatestVersion, ifEmpty), CancellationToken.None);
@@ -86,12 +119,55 @@ internal static class RestoreCommand
         return Success;
     }
 
+    private static async Task<int> RestoreMetadataAsync(
+        string archive, string dataPath, ServerOptions options, bool once, bool allowMissing)
+    {
+        // The server's own lock: held by a running server, so the metadata is never replaced under it.
+        using var held = DataDirectoryLock.TryAcquire(dataPath);
+        if (held is null)
+        {
+            var inUse = Application.Features.Backups.BackupErrors.RestoreInUse;
+            await Console.Error.WriteLineAsync($"Restore failed ({inUse.Code}): {inUse.Message}");
+            return Failure;
+        }
+
+        var restorer = new MetadataRestorer(
+            new TarBackupArchiveFormat(), new SqliteMetadataFiles(),
+            new FileSystemBlobStore(new FileSystemBlobOptions(dataPath, options.NodeId)));
+        var result = await restorer.RestoreAsync(
+            new MetadataRestoreRequest(archive, dataPath, SqliteMetadataInitializer.LatestVersion, once, allowMissing),
+            DateTime.UtcNow, CancellationToken.None);
+        if (result.IsFailure)
+        {
+            await Console.Error.WriteLineAsync($"Restore failed ({result.Error.Code}): {result.Error.Message}");
+            return Failure;
+        }
+
+        if (result.Value.WasSkipped)
+        {
+            Console.WriteLine($"Restore skipped: {ArchiveSource.DisplayName(archive)} is already restored in {Path.GetFullPath(dataPath)} ({OnceOption}).");
+            return Success;
+        }
+
+        var summary = result.Value;
+        var manifest = summary.Manifest!;
+        Console.WriteLine($"Restored the metadata of {ArchiveSource.DisplayName(archive)} into {Path.GetFullPath(dataPath)}:");
+        Console.WriteLine($"  taken at {manifest.SnapshotAt:u} on {manifest.NodeId} (TimeStore {manifest.TimeStoreVersion})");
+        Console.WriteLine($"  {manifest.Buckets} buckets, {manifest.Objects} objects, {manifest.Versions} versions; "
+            + $"{summary.Referenced - summary.Missing} of {summary.Referenced} referenced blobs present"
+            + (summary.Missing > 0 ? $", {summary.Missing} MISSING ({AllowMissingOption}): those objects fail to read" : ""));
+        Console.WriteLine($"  the replaced metadata is in {summary.PreviousCopy} (delete it once the server is checked)");
+        return Success;
+    }
+
     private static int PrintUsage(string problem)
     {
         Console.Error.WriteLine(problem);
         Console.Error.WriteLine(
-            $"Usage: TimeStore.Server {Name} {ArchiveOption} <file or http(s) URL> [{DataPathOption} <empty directory>] "
-            + $"[{IfEmptyOption}]");
+            $"Usage: TimeStore.Server {Name} {ArchiveOption} <file or http(s) URL> [{DataPathOption} <empty directory>] [{IfEmptyOption}]");
+        Console.Error.WriteLine(
+            $"       TimeStore.Server {Name} {MetadataOption} {ArchiveOption} <file or http(s) URL> [{DataPathOption} <data directory>] "
+            + $"[{OnceOption}] [{AllowMissingOption}]");
         return Usage;
     }
 }

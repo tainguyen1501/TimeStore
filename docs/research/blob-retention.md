@@ -1,11 +1,11 @@
-# Keeping deleted blobs: retention and metadata-only backups (B5a built)
+# Keeping deleted blobs: retention and metadata-only backups (B5a, B5b built)
 
 Sources (checked 2026-11-20, links in "Sources" at the end): Ceph RGW garbage collection (`rgw_gc_obj_min_wait`),
 Garage block reference counts (`BLOCK_GC_DELAY`), MinIO's `.trash` purger, SeaweedFS vacuum, JuiceFS trash and
 metadata backups; this repository's `docs/architecture.md` (write path, deferred deletion), `docs/research/backup.md`
 (archives, blob hold) and `docs/research/replication.md`.
 
-Status: **B5a built** (2026-11-20, see "B5a as built"); B5b and B5c proposed. Stages are in the roadmap ("Data protection", B5).
+Status: **B5a and B5b built** (2026-11-20, see "B5a as built" and "B5b as built"); B5c proposed. Stages are in the roadmap ("Data protection", B5).
 
 ## The problem
 
@@ -144,7 +144,7 @@ Disk space: everything overwritten or deleted stays for the retention. The metri
 | Stage | Content | Tests |
 |---|---|---|
 | **B5a** ✅ | `pending_blob_deletions` written by the six store methods; collector; orphan sweep reads the table; `Blobs:RetainDeletedDays`, `Blobs:CollectSeconds`; retained bytes metric. Behaviour unchanged at retention 0 | Each write path adds its rows in the commit's transaction; a crash after a commit keeps the rows (the sweep never deletes them); retention honoured, raising it protects blobs already released; a hold stops the collector |
-| **B5b** | Metadata-only backups (`content: metadata`) and `restore --metadata` with the blob check | Restore yesterday's metadata after overwrites and deletes: every object reads; with retention too short, the missing blobs are listed |
+| **B5b** ✅ | Metadata-only backups (`content: metadata`) and `restore --metadata` with the blob check | Restore yesterday's metadata after overwrites and deletes: every object reads; with retention too short, the missing blobs are listed |
 | **B5c** | Built-in incremental blob copy to an S3 endpoint (or documented `rclone copy` only) | A second copy sends only new blobs |
 
 ## B5a as built (2026-11-20)
@@ -162,6 +162,34 @@ As designed, with these details:
   orphans), `BlobCollectorTests` (grace, retention, raising it after the release, a restart, holds, zero wait, nodes),
   `BlobRetentionTests` end to end (released blobs survive the grace, a kill and a restart; the metric), and
   `BackupCrashTests` (after a crash during a backup, the held blob is collected without the orphan sweep).
+
+## B5b as built (2026-11-20)
+
+As designed in section 3 and 4, with these details:
+
+- **Why inside TimeStore.** The metadata is an embedded SQLite file: only the server can copy it consistently while it
+  writes (the image has no shell or `sqlite3`), as Garage (`garage meta snapshot`), etcd, Vault and Consul do for
+  their embedded stores. With Postgres later (several nodes) the database is backed up by its own tools
+  (pgBackRest, WAL-G) and this stage applies to SQLite only; the retention (B5a) is what makes any such restore work.
+- **Backup:** `content: metadata` on `POST /api/v1/backups` and the stream; migration 14 adds `backup_runs.content`.
+  Same snapshot (`VACUUM INTO`, one read transaction: in WAL mode writes go on, the WAL grows until it ends), no blob
+  hold, no blob entry; the manifest records `content`, the blobs referenced (`referencedBlobs`, `referencedBytes`) and
+  `retainDeletedDays`. Refused while the retention is 0. The SQLite online backup API was not used: with WAL, a write
+  by another connection restarts it, so a busy server might never finish.
+- **Restore:** `restore --metadata` (`MetadataRestorer`): the archive into `tmp/`, checked (manifest, SHA-256 against
+  the manifest and `blobs.sha256`); every referenced blob checked through `IMetadataFiles` (the provider reads the
+  file read-only, joining parts through their primary keys) and `IBlobStore`; then the swap under
+  `.timestore-restore-metadata`, the old database kept in `metadata-before-restore-<time>/`, the archive recorded in
+  `.timestore-restored-metadata` for `--once`.
+- **Server lock:** the server holds `<DataPath>/.timestore-lock` (an exclusive file lock, released by the OS when the
+  process ends); a second server on the same directory refuses to start, and a metadata restore refuses a running one.
+- **Helm:** `restore.metadataArchive` (an init container running `restore --metadata --once`); not together with
+  `restore.archive`.
+- **Tests:** `BackupRunnerTests` (archive entries, no hold, manifest), `BackupServiceTests` (retention required),
+  `MetadataBackupTests` end to end (backup, overwrite, delete and add, restore: the server is back at the backup;
+  refused while running, for a full restore, for missing blobs; `--once`; `--allow-missing`). Load check:
+  `deploy/bench/metadata_backup.py` (requests during a backup: no error, latency within the noise; a check of the
+  code, not a reference: numbers depend on the machine).
 
 ## Decisions to review
 

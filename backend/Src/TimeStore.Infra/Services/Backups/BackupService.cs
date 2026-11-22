@@ -30,8 +30,11 @@ public sealed class BackupService(
         var compression = BackupValidation.Compression(request.Compression, options);
         if (compression.IsFailure)
             return compression.Error;
+        var content = BackupValidation.Content(request.Content, options);
+        if (content.IsFailure)
+            return content.Error;
 
-        var run = BackupRun.Queue(BackupTriggers.Manual, target, compression.Value, caller.AccessKeyId, clock.UtcNowMs);
+        var run = BackupRun.Queue(BackupTriggers.Manual, target, compression.Value, caller.AccessKeyId, clock.UtcNowMs, content.Value);
         if (!await runs.TryCreateBackupRunAsync(run, ct))
             return BackupErrors.Active;
 
@@ -40,13 +43,17 @@ public sealed class BackupService(
     }
 
     public async ValueTask<(Result<BackupRunResponse> Result, Exception? Exception)> StreamAsync(
-        string? compression, BackupCaller caller, IBackupTarget target, CancellationToken ct)
+        string? compression, BackupCaller caller, IBackupTarget target, CancellationToken ct, string? content = null)
     {
         var chosen = BackupValidation.Compression(compression, options);
         if (chosen.IsFailure)
             return (chosen.Error, null);
+        var holds = BackupValidation.Content(content, options);
+        if (holds.IsFailure)
+            return (holds.Error, null);
 
-        var run = BackupRun.Queue(BackupTriggers.Api, BackupTargetTypes.Stream, chosen.Value, caller.AccessKeyId, clock.UtcNowMs);
+        var run = BackupRun.Queue(
+            BackupTriggers.Api, BackupTargetTypes.Stream, chosen.Value, caller.AccessKeyId, clock.UtcNowMs, holds.Value);
         if (!await runs.TryCreateBackupRunAsync(run, ct))
             return (BackupErrors.Active, null);
 

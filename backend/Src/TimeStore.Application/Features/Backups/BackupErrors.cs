@@ -11,6 +11,8 @@ public static class BackupErrors
         public const string InvalidTarget = "BACKUP_INVALID_TARGET";
         public const string TargetNotConfigured = "BACKUP_TARGET_NOT_CONFIGURED";
         public const string InvalidCompression = "BACKUP_INVALID_COMPRESSION";
+        public const string InvalidContent = "BACKUP_INVALID_CONTENT";
+        public const string RetentionRequired = "BACKUP_RETENTION_REQUIRED";
         public const string NotActive = "BACKUP_NOT_ACTIVE";
         public const string ArchiveNotFound = "BACKUP_ARCHIVE_NOT_FOUND";
 
@@ -28,6 +30,10 @@ public static class BackupErrors
         public const string RestoreUnsupported = "BACKUP_RESTORE_UNSUPPORTED";
         public const string RestoreChecksumMismatch = "BACKUP_RESTORE_CHECKSUM_MISMATCH";
         public const string RestoreArchiveUnavailable = "BACKUP_RESTORE_ARCHIVE_UNAVAILABLE";
+        public const string RestoreWrongContent = "BACKUP_RESTORE_WRONG_CONTENT";
+        public const string RestoreNoData = "BACKUP_RESTORE_NO_DATA";
+        public const string RestoreInUse = "BACKUP_RESTORE_IN_USE";
+        public const string RestoreMissingBlobs = "BACKUP_RESTORE_MISSING_BLOBS";
     }
 
     public static readonly AppError Active =
@@ -44,6 +50,13 @@ public static class BackupErrors
 
     public static readonly AppError InvalidCompression =
         AppError.Validation(Codes.InvalidCompression, "Compression must be 'zstd' or 'none'.");
+
+    public static readonly AppError InvalidContent =
+        AppError.Validation(Codes.InvalidContent, "Content must be 'full' or 'metadata'.");
+
+    public static readonly AppError RetentionRequired = AppError.Validation(Codes.RetentionRequired,
+        "A metadata-only backup needs TimeStore:Blobs:RetainDeletedDays above 0: without it, the blobs it references are "
+        + "deleted a minute after they are overwritten or deleted, and the backup could not be restored.");
 
     public static readonly AppError NotActive =
         AppError.Conflict(Codes.NotActive, "The backup has already finished.");
@@ -87,4 +100,23 @@ public static class BackupErrors
 
     public static AppError RestoreArchiveUnavailable(string archive, string reason) =>
         AppError.Validation(Codes.RestoreArchiveUnavailable, $"The archive {archive} cannot be read: {reason}");
+
+    /// <summary>A metadata-only archive given to a full restore, or the other way round.</summary>
+    public static AppError RestoreWrongContent(string content, string use) => AppError.Validation(Codes.RestoreWrongContent,
+        $"The archive holds '{content}'; {use}.");
+
+    public static readonly AppError RestoreNoData = AppError.Validation(Codes.RestoreNoData,
+        "The data directory holds no metadata.db and blobs: a metadata-only backup restores onto the data directory it "
+        + "came from. Restore a full backup into an empty directory instead.");
+
+    public static readonly AppError RestoreInUse = AppError.Conflict(Codes.RestoreInUse,
+        "A TimeStore server is running on this data directory; stop it first (a restore never replaces the metadata under "
+        + "a running server).");
+
+    /// <param name="examples">Some of them as "bucket/key".</param>
+    public static AppError RestoreMissingBlobs(long missing, long referenced, IEnumerable<string> examples) =>
+        AppError.Validation(Codes.RestoreMissingBlobs,
+            $"{missing} of the {referenced} blobs this metadata references are not in the data directory (deleted after "
+            + $"Blobs:RetainDeletedDays, or never there), for example: {string.Join(", ", examples)}. Nothing was changed; "
+            + "restore a newer backup, or pass --allow-missing to restore anyway (those objects will fail to read).");
 }

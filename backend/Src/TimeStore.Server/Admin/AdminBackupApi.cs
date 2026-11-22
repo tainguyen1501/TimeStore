@@ -108,11 +108,12 @@ internal static class AdminBackupApi
     /// takes a truncated archive for a whole one (the archive also ends with <c>blobs.sha256</c>).
     /// </summary>
     private static async Task<IResult> StreamAsync(
-        IBackupService service, ILogger<BackupWorker> logger, HttpContext http, [FromQuery] string? compression = null)
+        IBackupService service, ILogger<BackupWorker> logger, HttpContext http, [FromQuery] string? compression = null,
+        [FromQuery] string? content = null)
     {
         var principal = http.Principal();
         var target = new HttpBackupTarget(http.Response);
-        var (result, exception) = await service.StreamAsync(compression, CallerOf(http), target, http.RequestAborted);
+        var (result, exception) = await service.StreamAsync(compression, CallerOf(http), target, http.RequestAborted, content);
         if (result.IsSuccess)
         {
             BackupLog.Streamed(logger, result.Value.Id, result.Value.ArchiveName, principal.AccessKeyId, result.Value.ArchiveSize ?? 0);

@@ -74,6 +74,7 @@ work from outside. With TLS on the admin ingress, the session cookie is marked `
 | `backup.keep` | `1` | `Backup:Keep`: archives kept in `/data/backups` (1–100); older ones are deleted after a backup succeeds |
 | `blobs.retainDeletedDays` | `0` | `Blobs:RetainDeletedDays`: days released (overwritten or deleted) blobs stay on the volume (0–3650) so older metadata backups stay restorable; size the volume for it |
 | `backup.compression` / `compressionLevel` / `minFreeBytes` | `zstd` / `3` / `1073741824` | `Backup:Compression`, `Backup:CompressionLevel` (1–19), `Backup:MinFreeBytes` |
+| `restore.metadataArchive` | `""` | A metadata-only backup put back onto this data volume (needs `blobs.retainDeletedDays`): every blob it references is checked first, applied once per archive. Not with `restore.archive`. See "Undo to a point in time" |
 | `restore.archive` | `""` | Restore this archive into the data volume when it is empty, before the server starts (an init container); an http(s) URL (or a file path the pod can read). See "Restore a backup" |
 | `extraEnv` | `[]` | More settings as `TimeStore__Section__Key` variables ([all settings](../../../docs/configuration.md)) |
 | `persistence.enabled` | `true` | Off: an `emptyDir`, data lost on every restart |
@@ -187,6 +188,23 @@ kubectl -n storage logs ts-timestore-0 -c restore               # "all checksums
 
 **Side by side** (the old server keeps serving): install a second release (`ts2`) with `restore.archive` set and other
 ingress hosts, check it, then move the ingress or DNS to it and uninstall the old release.
+
+### Undo to a point in time (`restore.metadataArchive`)
+
+With `blobs.retainDeletedDays` set, a metadata-only backup (`POST /api/v1/backups` with `{"content":"metadata"}`,
+seconds, small) puts the server back at its instant without touching the data claim's blobs
+([docs/backup.md](../../../docs/backup.md), "Metadata-only backups"). Put the archive where the pod can download it
+and set:
+
+```yaml
+restore:
+  metadataArchive: https://…/timestore-node-1-20261120T030000Z.tar.zst?X-Amz-…   # presigned: a credential
+```
+
+Apply: the pod restarts, the init container checks every blob the backup references and swaps the metadata in (the
+replaced one stays in `/data/metadata-before-restore-<time>/`), then the server starts. When blobs are gone the pod
+stays in `Init:Error` and the log names them (`kubectl -n storage logs ts-timestore-0 -c restore`); nothing changed.
+The same archive is applied once (`--once`): restarts leave it alone. Remove the value after the check.
 
 ### An archive on your machine (manifests)
 

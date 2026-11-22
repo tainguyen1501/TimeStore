@@ -34,11 +34,15 @@ public sealed record BackupRun(
     public const int ArchiveNameMaxLength = 255;
     public const int ErrorMessageMaxLength = 1024;
 
+    /// <summary>What the archive holds: <see cref="BackupContents"/> (the whole server, or the metadata only).</summary>
+    public string Content { get; init; } = BackupContents.Full;
+
     /// <summary>A new run waiting for the worker (or for the request that streams it).</summary>
     public static BackupRun Queue(
-        string trigger, string targetType, string compression, string startedBy, DateTime now) =>
+        string trigger, string targetType, string compression, string startedBy, DateTime now,
+        string content = BackupContents.Full) =>
         new(Guid.CreateVersion7(), BackupStatus.Queued, trigger, targetType, compression, startedBy,
-            now, null, null, null, BackupProgress.None, null, null, null, null, null);
+            now, null, null, null, BackupProgress.None, null, null, null, null, null) { Content = content };
 
     public bool IsActive => Status is BackupStatus.Queued or BackupStatus.Running;
 }
@@ -92,6 +96,21 @@ public static class BackupTargetTypes
 
     /// <summary>A file in the configured backup directory (outside the data directory).</summary>
     public const string Directory = "directory";
+}
+
+/// <summary>What a backup archive holds (docs/research/blob-retention.md, stage B5b).</summary>
+public static class BackupContents
+{
+    /// <summary>The metadata and every blob it references: restores anywhere, on its own.</summary>
+    public const string Full = "full";
+
+    /// <summary>
+    /// The metadata only (seconds, small): restored onto the data directory it came from, whose blobs released after
+    /// the backup are still kept (<c>Blobs:RetainDeletedDays</c>).
+    /// </summary>
+    public const string Metadata = "metadata";
+
+    public static bool IsKnown(string? content) => content is Full or Metadata;
 }
 
 public static class BackupCompressions

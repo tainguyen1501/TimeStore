@@ -1,4 +1,5 @@
 using System.Globalization;
+using TimeStore.Domain.Backups;
 
 namespace TimeStore.Application.Features.Backups;
 
@@ -27,11 +28,16 @@ public static class BackupLayout
     private const string ChecksumSeparator = "  "; // sha256sum: two spaces between hash and file name
     private const char EntrySeparator = '/';
     private const string NameSeparator = "-";
+    private const int FirstSequence = 1;
     private const string LineEnd = "\n";
 
-    /// <summary><c>timestore-&lt;node&gt;-&lt;yyyyMMddTHHmmssZ&gt;&lt;extension&gt;</c>.</summary>
-    public static string ArchiveName(string nodeId, DateTime startedAt, string extension) =>
-        ArchivePrefix + nodeId + NameSeparator + startedAt.ToString(TimeFormat, CultureInfo.InvariantCulture) + extension;
+    /// <summary>
+    /// <c>timestore-&lt;node&gt;-&lt;yyyyMMddTHHmmssZ&gt;&lt;extension&gt;</c>; a later archive of the same second (a
+    /// metadata-only backup takes milliseconds) gets <c>-2</c>, <c>-3</c>, ... before the extension.
+    /// </summary>
+    public static string ArchiveName(string nodeId, DateTime startedAt, string extension, int sequence = FirstSequence) =>
+        ArchivePrefix + nodeId + NameSeparator + startedAt.ToString(TimeFormat, CultureInfo.InvariantCulture)
+        + (sequence > FirstSequence ? NameSeparator + sequence.ToString(CultureInfo.InvariantCulture) : string.Empty) + extension;
 
     /// <summary><c>blobs/&lt;last two hex characters&gt;/&lt;id&gt;</c>, the data directory's layout.</summary>
     public static string BlobEntry(Guid blobId)
@@ -82,6 +88,11 @@ public static class BackupLayout
 /// <param name="Blobs">Blob entries in the archive.</param>
 /// <param name="Bytes">Their total size.</param>
 /// <param name="MetadataSha256">Lowercase hex SHA-256 of <c>metadata.db</c>.</param>
+/// <param name="Content"><c>full</c>, or <c>metadata</c> (no blob entries: <paramref name="Blobs"/> is 0).</param>
+/// <param name="ReferencedBlobs">Blobs the metadata references (and their bytes): in the archive when full, on the
+/// data directory it came from when metadata only.</param>
+/// <param name="RetainDeletedDays">The blob retention when the backup was taken (metadata only: how long it stays
+/// restorable).</param>
 public sealed record BackupManifest(
     int Format,
     string TimeStoreVersion,
@@ -96,4 +107,8 @@ public sealed record BackupManifest(
     long Bytes,
     long MetadataBytes,
     string MetadataSha256,
-    bool IncludesMasterKey);
+    bool IncludesMasterKey,
+    string Content = BackupContents.Full,
+    long ReferencedBlobs = 0,
+    long ReferencedBytes = 0,
+    int RetainDeletedDays = 0);

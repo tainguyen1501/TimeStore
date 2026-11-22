@@ -11,7 +11,7 @@ public static class BackupMappings
             run.Id, StatusOf(run.Status), run.Trigger, run.TargetType, run.Compression, run.StartedBy,
             run.QueuedAt, run.StartedAt, run.FinishedAt, run.SnapshotAt, run.Progress.BlobsTotal, run.Progress.BlobsDone,
             run.Progress.BytesTotal, run.Progress.BytesDone, run.ArchiveName, run.ArchiveSize, run.ArchiveSha256,
-            run.ErrorCode, run.ErrorMessage);
+            run.ErrorCode, run.ErrorMessage, run.Content);
     }
 
     private static string StatusOf(BackupStatus status) => status switch

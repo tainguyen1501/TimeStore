@@ -2554,6 +2554,7 @@ export interface paths {
             parameters: {
                 query?: {
                     compression?: string;
+                    content?: string;
                 };
                 header?: never;
                 path?: never;
@@ -3276,6 +3277,8 @@ export interface components {
             archiveSha256: null | string;
             errorCode: null | string;
             errorMessage: null | string;
+            /** @default full */
+            content: string;
         };
         BlobSweepResponse: {
             /** Format: int32 */
@@ -3619,6 +3622,7 @@ export interface components {
         StartBackupRequest: {
             target?: null | string;
             compression?: null | string;
+            content?: null | string;
         };
         StartUploadRequest: {
             key: string;

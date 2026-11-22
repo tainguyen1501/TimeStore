@@ -2569,6 +2569,13 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "content",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -3378,6 +3385,10 @@
               "null",
               "string"
             ]
+          },
+          "content": {
+            "type": "string",
+            "default": "full"
           }
         }
       },
@@ -4633,6 +4644,12 @@
             ]
           },
           "compression": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "content": {
             "type": [
               "null",
               "string"

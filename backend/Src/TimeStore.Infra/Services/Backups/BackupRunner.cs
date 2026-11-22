@@ -53,6 +53,23 @@ public sealed class BackupRunner(
         return await ExecutionAsync(runId, BackupErrors.TargetNotConfigured, null);
     }
 
+    /// <summary>
+    /// The archive's name, never one the target holds or an earlier run carried: names have a resolution of one second,
+    /// and two backups of the same second (a metadata-only one takes milliseconds) would otherwise fail the second at
+    /// its commit, or, once <c>Keep</c> deleted the first archive, give a later one the first run's name (its download
+    /// would answer with the wrong archive).
+    /// </summary>
+    private async ValueTask<string> FreeArchiveNameAsync(IBackupTarget target, string extension, DateTime startedAt, CancellationToken ct)
+    {
+        HashSet<string> stored = target is IBackupArchiveStore store // a stream stores nothing under the name
+            ? (await store.ListAsync(ct)).Select(archive => archive.Name).ToHashSet(StringComparer.Ordinal)
+            : [];
+        var name = BackupLayout.ArchiveName(options.NodeId, startedAt, extension);
+        for (var sequence = 2; stored.Contains(name) || await runs.IsBackupArchiveNameUsedAsync(name, ct); sequence++)
+            name = BackupLayout.ArchiveName(options.NodeId, startedAt, extension, sequence);
+        return name;
+    }
+
     public async ValueTask<BackupExecution?> RunAsync(Guid runId, IBackupTarget target, CancellationToken ct)
     {
         var run = await runs.FindBackupRunAsync(runId, ct);
@@ -60,7 +77,7 @@ public sealed class BackupRunner(
             return null;
 
         var startedAt = clock.UtcNowMs;
-        var archiveName = BackupLayout.ArchiveName(options.NodeId, startedAt, format.ExtensionOf(run.Compression));
+        var archiveName = await FreeArchiveNameAsync(target, format.ExtensionOf(run.Compression), startedAt, ct);
         if (!await runs.TryStartBackupRunAsync(runId, archiveName, startedAt, ct))
             return null;
 
@@ -134,15 +151,17 @@ public sealed class BackupRunner(
     private async ValueTask<ArchiveSummary> WriteAsync(BackupRun run, string archiveName, IBackupTarget target, RunControl control)
     {
         var ct = control.Token;
+        var withBlobs = run.Content != BackupContents.Metadata;
         EnsureFreeSpace();
 
-        // Hold first, then snapshot: every blob the snapshot references stays on disk until the archive has it.
-        await using var held = hold.Hold();
+        // Hold first, then snapshot: every blob the snapshot references stays on disk until the archive has it. A
+        // metadata-only backup copies no blob, so it holds nothing: the blob retention keeps what it references.
+        await using var held = withBlobs ? hold.Hold() : null;
         await using var snapshot = await snapshots.CreateAsync(run.Id, ct);
         var snapshotAt = clock.UtcNowMs;
         var summary = snapshot.Summary;
-        EnsureArchiveSpace(target, summary.Bytes + summary.DatabaseBytes);
-        control.Progress = new BackupProgress(summary.Blobs, 0, summary.Bytes, 0);
+        EnsureArchiveSpace(target, (withBlobs ? summary.Bytes : 0) + summary.DatabaseBytes);
+        control.Progress = withBlobs ? new BackupProgress(summary.Blobs, 0, summary.Bytes, 0) : BackupProgress.None;
         await runs.UpdateBackupProgressAsync(run.Id, snapshotAt, control.Progress, ct);
 
         string metadataSha256;
@@ -151,8 +170,9 @@ public sealed class BackupRunner(
 
         var manifest = format.SerializeManifest(new BackupManifest(
             BackupLayout.FormatVersion, Version, options.NodeId, snapshotAt, summary.SchemaVersion, run.Compression,
-            summary.Buckets, summary.Objects, summary.Versions, summary.Blobs, summary.Bytes, summary.DatabaseBytes,
-            metadataSha256, IncludesMasterKey: false));
+            summary.Buckets, summary.Objects, summary.Versions, withBlobs ? summary.Blobs : 0, withBlobs ? summary.Bytes : 0,
+            summary.DatabaseBytes, metadataSha256, IncludesMasterKey: false, run.Content, summary.Blobs, summary.Bytes,
+            (int)options.BlobRetention.TotalDays));
 
         await using var checksums = OpenChecksumList(run.Id);
         await using var upload = await target.OpenWriteAsync(archiveName, ct);
@@ -169,7 +189,7 @@ public sealed class BackupRunner(
 
         var nextReport = clock.GetUtcNow() + BackupOptions.ProgressInterval;
         long blobsDone = 0, bytesDone = 0;
-        await foreach (var blob in snapshot.ListBlobsAsync(ct))
+        await foreach (var blob in withBlobs ? snapshot.ListBlobsAsync(ct) : AsyncEnumerable.Empty<BlobLocator>())
         {
             ct.ThrowIfCancellationRequested();
             var entry = BackupLayout.BlobEntry(blob.BlobId);

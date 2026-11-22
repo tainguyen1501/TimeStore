@@ -48,6 +48,10 @@ The first public release, 0.1.0. A single-node, S3-compatible object storage ser
 
 **Storage and operations**
 
+- Metadata-only backups (`"content": "metadata"`): the metadata alone, in seconds, restorable onto the same data
+  directory while `Blobs:RetainDeletedDays` keeps the blobs it references (`restore --metadata`, which checks every
+  blob first; Helm `restore.metadataArchive`). The server now holds `<DataPath>/.timestore-lock`: a second server on
+  the same directory refuses to start.
 - Released blobs (overwritten, deleted, replaced or aborted parts) are recorded in the metadata by the commit that
   releases them and deleted by a collector, instead of an in-memory queue: a crash forgets nothing. New
   `Blobs:RetainDeletedDays` (default 0) keeps them longer so older metadata backups stay restorable, and

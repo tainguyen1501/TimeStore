@@ -62,6 +62,24 @@ if (File.Exists(Path.Combine(options.DataPath, BackupRestorer.InProgressMarker))
     return StartupRefused;
 }
 
+if (File.Exists(Path.Combine(options.DataPath, MetadataRestorer.InProgressMarker)))
+{
+    await Console.Error.WriteLineAsync(
+        $"TimeStore cannot start: the data directory {Path.GetFullPath(options.DataPath)} holds an unfinished metadata "
+        + $"restore ({MetadataRestorer.InProgressMarker}). Run the same restore again.");
+    return StartupRefused;
+}
+
+// One server per data directory, held until the process ends (a metadata restore checks it too).
+using var dataLock = DataDirectoryLock.TryAcquire(options.DataPath);
+if (dataLock is null)
+{
+    await Console.Error.WriteLineAsync(
+        $"TimeStore cannot start: another TimeStore process uses the data directory {Path.GetFullPath(options.DataPath)} "
+        + $"({DataDirectoryLock.FileName}).");
+    return StartupRefused;
+}
+
 builder.WebHost.ConfigureKestrel(kestrel =>
 {
     kestrel.AddServerHeader = false;
@@ -109,7 +127,8 @@ builder.Services.AddSingleton(options.Blobs.ToOptions(options.NodeId));
 builder.Services.AddSingleton(new StorageMetricsOptions(options.DataPath));
 builder.Services.AddSingleton(new BackupOptions(
     options.NodeId, options.DataPath, Path.Combine(options.DataPath, FileSystemBlobStore.TempDirectory),
-    options.Backup.Compression, options.Backup.CompressionLevel, options.Backup.MinFreeBytes, options.Backup.Keep));
+    options.Backup.Compression, options.Backup.CompressionLevel, options.Backup.MinFreeBytes, options.Backup.Keep,
+    TimeSpan.FromDays(options.Blobs.RetainDeletedDays)));
 builder.Services.AddDirectoryBackupTarget(new DirectoryBackupOptions(options.Backup.DirectoryPath(options.DataPath)));
 builder.Services.AddHostedService<BackupWorker>();
 builder.Services.AddSingleton(options.Replication.ToOptions());

@@ -376,7 +376,13 @@ internal static class SqliteMigrations
         CREATE INDEX ix_pending_blob_deletions_released ON pending_blob_deletions (node_id, released_at);
         """;
 
+    // Metadata-only backups (stage B5b, docs/research/blob-retention.md): what a run's archive holds, 'full' (metadata and
+    // blobs) or 'metadata' (the metadata only, restored onto the data directory it came from).
+    private const string V14BackupRunContent = """
+        ALTER TABLE backup_runs ADD COLUMN content TEXT NOT NULL DEFAULT 'full' CHECK (content IN ('full', 'metadata'));
+        """;
+
     public static readonly string[] All =
         [V1Buckets, V2Objects, V3AccessKeys, V4Multipart, V5AdminSessions, V6BucketUsage, V7Versioning, V8Lifecycle, V9BucketPolicies,
-            V10BackupRuns, V11BackupRunsWithoutMasterKey, V12Replication, V13PendingBlobDeletions];
+            V10BackupRuns, V11BackupRunsWithoutMasterKey, V12Replication, V13PendingBlobDeletions, V14BackupRunContent];
 }

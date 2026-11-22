@@ -45,20 +45,34 @@ spec:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
       enableServiceLinks: false
-      {{- if .Values.restore.archive }}
+      {{- if and .Values.restore.archive .Values.restore.metadataArchive }}
+      {{- fail "restore.archive and restore.metadataArchive cannot be set together" }}
+      {{- end }}
+      {{- if or .Values.restore.archive .Values.restore.metadataArchive }}
       # restore.archive: fills an empty data volume from a backup before the server starts. It runs at every start but
       # leaves a volume that holds data alone (--if-empty), and starts over after a restore that was cut.
+      # restore.metadataArchive: puts a metadata-only backup back onto this volume, once per archive (--once), after
+      # checking that every blob it references is still there.
       initContainers:
         - name: restore
           image: {{ include "timestore.image" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
             - restore
+            {{- if .Values.restore.metadataArchive }}
+            - --metadata
+            - --archive
+            - {{ .Values.restore.metadataArchive | quote }}
+            - --data-path
+            - /data
+            - --once
+            {{- else }}
             - --archive
             - {{ .Values.restore.archive | quote }}
             - --data-path
             - /data
             - --if-empty
+            {{- end }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
           env:

@@ -11,4 +11,15 @@ public static class BackupValidation
         var compression = requested ?? options.Compression;
         return BackupCompressions.IsKnown(compression) ? compression : BackupErrors.InvalidCompression;
     }
+
+    /// <summary>What the archive holds (full when null), or the error; metadata only needs a blob retention.</summary>
+    public static Result<string> Content(string? requested, BackupOptions options)
+    {
+        var content = requested ?? BackupContents.Full;
+        if (!BackupContents.IsKnown(content))
+            return BackupErrors.InvalidContent;
+        if (content == BackupContents.Metadata && options.BlobRetention <= TimeSpan.Zero)
+            return BackupErrors.RetentionRequired;
+        return content;
+    }
 }

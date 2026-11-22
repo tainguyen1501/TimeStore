@@ -41,7 +41,6 @@ public sealed class BackupRestorer(IBackupArchiveFormat format)
     /// <summary>Present in a data directory while a restore writes it (see remarks).</summary>
     public const string InProgressMarker = ".timestore-restore";
 
-    private const int MaxManifestBytes = 1 << 20;
     private const string TempDirectory = "tmp";
     private const string ChecksumListName = "restore-blobs.sha256.tmp";
     private const UnixFileMode PrivateFile = UnixFileMode.UserRead | UnixFileMode.UserWrite;
@@ -74,9 +73,8 @@ public sealed class BackupRestorer(IBackupArchiveFormat format)
         }
         catch (InvalidDataException)
         {
-            // A damaged or truncated archive: tar structure, Zstandard frame or its checksum.
             Clean(data, createdDirectory, wroteMasterKey ? masterKeyPath : null);
-            return BackupErrors.RestoreInvalidArchive("it is damaged or truncated.");
+            return BackupArchiveOpener.Damaged;
         }
         catch
         {
@@ -88,27 +86,13 @@ public sealed class BackupRestorer(IBackupArchiveFormat format)
     private async ValueTask<Result<RestoreSummary>> UnpackAsync(
         RestoreRequest request, DirectoryInfo data, string masterKeyPath, Action masterKeyWritten, CancellationToken ct)
     {
-        var opened = await ArchiveSource.OpenAsync(request.Archive, ct);
+        // 1. The manifest comes first: refuse what this build cannot restore before writing anything.
+        var opened = await BackupArchiveOpener.OpenAsync(format, request.Archive, Domain.Backups.BackupContents.Full,
+            "it has no blobs: restore it with --metadata onto the data directory it came from", request.MaxSchemaVersion, ct);
         if (opened.IsFailure)
             return opened.Error;
-        await using var source = opened.Value;
-        await using var reader = await format.OpenReaderAsync(source, ct);
-
-        // 1. The manifest comes first: refuse what this build cannot restore before writing anything.
-        var first = await reader.NextAsync(ct);
-        if (first is null || first.Name != BackupLayout.ManifestEntry || first.Length > MaxManifestBytes)
-            return BackupErrors.RestoreInvalidArchive($"the first entry is not {BackupLayout.ManifestEntry}.");
-        using var manifestBytes = new MemoryStream();
-        await first.CopyToAsync(manifestBytes, ct);
-        var manifest = format.ParseManifest(manifestBytes.ToArray());
-        if (manifest is null || manifest.Format < 1)
-            return BackupErrors.RestoreInvalidArchive($"{BackupLayout.ManifestEntry} cannot be read.");
-        if (manifest.Format > BackupLayout.FormatVersion)
-            return BackupErrors.RestoreUnsupported(
-                $"archive format {manifest.Format} is newer than this build reads ({BackupLayout.FormatVersion}); use a newer TimeStore.");
-        if (manifest.SchemaVersion > request.MaxSchemaVersion)
-            return BackupErrors.RestoreUnsupported(
-                $"metadata schema {manifest.SchemaVersion} is newer than this build knows ({request.MaxSchemaVersion}); use a newer TimeStore.");
+        await using var archive = opened.Value;
+        var (reader, manifest) = (archive.Reader, archive.Manifest);
 
         // 2. Entries, each hashed while it is written.
         var hashes = new Dictionary<string, string>(StringComparer.Ordinal);

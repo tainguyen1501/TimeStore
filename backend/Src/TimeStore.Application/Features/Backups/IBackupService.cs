@@ -20,7 +20,7 @@ public interface IBackupService
     /// comes along for the log.
     /// </summary>
     ValueTask<(Result<BackupRunResponse> Result, Exception? Exception)> StreamAsync(
-        string? compression, BackupCaller caller, IBackupTarget target, CancellationToken ct);
+        string? compression, BackupCaller caller, IBackupTarget target, CancellationToken ct, string? content = null);
 
     /// <summary>The newest runs first.</summary>
     ValueTask<IReadOnlyList<BackupRunResponse>> ListAsync(CancellationToken ct);
@@ -84,6 +84,10 @@ public interface IBackupQueue
 /// <param name="DataPath">The data directory (free space is measured there).</param>
 /// <param name="TempPath">Scratch space of a run (its checksum list), emptied of <c>*.tmp</c> files at startup.</param>
 /// <param name="Keep">How many archives a stored target keeps: older ones are deleted after a run succeeds.</param>
+/// <param name="BlobRetention">
+/// How long released blobs are kept (<c>Blobs:RetainDeletedDays</c>): a metadata-only backup needs it above zero, and
+/// its manifest records it.
+/// </param>
 public sealed record BackupOptions(
     string NodeId,
     string DataPath,
@@ -91,7 +95,8 @@ public sealed record BackupOptions(
     string Compression,
     int CompressionLevel,
     long MinFreeBytes,
-    int Keep = BackupOptions.DefaultKeep)
+    int Keep = BackupOptions.DefaultKeep,
+    TimeSpan BlobRetention = default)
 {
     public const int DefaultKeep = 1;
     public const int DefaultCompressionLevel = 3;

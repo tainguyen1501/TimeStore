@@ -255,7 +255,7 @@ and blob reader as interfaces, so the multi-node versions replace implementation
 | Engine, service, queue | `IBackupRunner` / `BackupRunner`, `IBackupService` / `BackupService`, `BackupQueue` |
 | Targets | `DirectoryBackupTarget` (Infra), the HTTP stream target (`Server/Admin/AdminBackupApi.cs`) |
 | Worker | `Server/Workers/BackupWorker.cs`: recovers at startup (running → interrupted, queued streams → interrupted, queued stored runs woken), then runs the queue |
-| Restore | `Infra/Backups/BackupRestorer.cs`, `Server/RestoreCommand.cs` (`TimeStore.Server restore`) |
+| Restore | `Infra/Backups/BackupRestorer.cs` (full), `MetadataRestorer.cs` (`--metadata`), `BackupArchiveOpener.cs` (opening and manifest checks both share), `Server/RestoreCommand.cs` (`TimeStore.Server restore`) |
 
 Tests: `BackupStoreContract` (runs and snapshots on SQLite); unit tests of the engine, service, restorer, layout and
 the hold; end to end (`BackupApiTests`, `BackupFailureTests`, `RestoreCommandTests`): stream and restore with both

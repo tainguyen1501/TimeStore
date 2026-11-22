@@ -30,6 +30,8 @@ data/
   blobs/<xy>/<uuidv7>      immutable blob files; <xy> = last two hex chars of the id
   tmp/<uuidv7>.tmp         in-flight writes; deleted at startup
   tmp/backup-<run id>.*    a running backup's metadata snapshot and checksum list; deleted when it ends and at startup
+  .timestore-lock          held (flock) by the running server: one server per directory, no restore under it
+  metadata-before-restore-<time>/   the metadata a `restore --metadata` replaced (deleted by hand)
 ```
 
 Released blobs (`docs/research/blob-retention.md`): a commit that releases a blob (overwrite, delete, replaced or

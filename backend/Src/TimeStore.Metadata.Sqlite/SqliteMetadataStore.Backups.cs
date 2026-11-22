@@ -22,6 +22,7 @@ public sealed partial class SqliteMetadataStore : IBackupRunStore
             command.Parameters.AddText(BackupSql.Compression, run.Compression);
             command.Parameters.AddText(BackupSql.StartedBy, run.StartedBy);
             command.Parameters.AddInt64(BackupSql.QueuedAt, SqliteTime.ToUnixMs(run.QueuedAt));
+            command.Parameters.AddText(BackupSql.Content, run.Content);
             try
             {
                 return await command.ExecuteNonQueryAsync(ct) == 1;
@@ -54,6 +55,15 @@ public sealed partial class SqliteMetadataStore : IBackupRunStore
         while (await reader.ReadAsync(ct))
             runs.Add(ReadBackupRun(reader));
         return runs;
+    }
+
+    public async ValueTask<bool> IsBackupArchiveNameUsedAsync(string archiveName, CancellationToken ct)
+    {
+        await using var connection = await connections.OpenAsync(ct);
+        await using var command = connection.CreateCommand();
+        command.CommandText = BackupSql.ArchiveNameUsed;
+        command.Parameters.AddText(BackupSql.ArchiveName, archiveName);
+        return await command.ExecuteScalarAsync(ct) is not null;
     }
 
     public async ValueTask<IReadOnlyList<Guid>> ListQueuedBackupRunIdsAsync(CancellationToken ct)
@@ -159,7 +169,10 @@ public sealed partial class SqliteMetadataStore : IBackupRunStore
         reader.IsDBNull(15) ? null : reader.GetInt64(15),
         reader.IsDBNull(16) ? null : reader.GetString(16),
         reader.IsDBNull(17) ? null : reader.GetString(17),
-        reader.IsDBNull(18) ? null : reader.GetString(18));
+        reader.IsDBNull(18) ? null : reader.GetString(18))
+    {
+        Content = reader.GetString(19),
+    };
 
     private static DateTime? NullableTime(SqliteDataReader reader, int ordinal) =>
         reader.IsDBNull(ordinal) ? null : SqliteTime.FromUnixMs(reader.GetInt64(ordinal));
@@ -186,22 +199,26 @@ public sealed partial class SqliteMetadataStore : IBackupRunStore
         public const string ErrorCode = "$errorCode";
         public const string ErrorMessage = "$errorMessage";
         public const string Limit = "$limit";
+        public const string Content = "$content";
 
         private const string Columns = """
             id, status, trigger_type, target_type, compression, started_by, queued_at, started_at,
             finished_at, snapshot_at, blobs_total, blobs_done, bytes_total, bytes_done, archive_name, archive_size,
-            archive_sha256, error_code, error_message
+            archive_sha256, error_code, error_message, content
             """;
 
         public const string Insert = """
             INSERT INTO backup_runs (id, status, trigger_type, target_type, compression, started_by,
-                queued_at, blobs_total, blobs_done, bytes_total, bytes_done)
-            VALUES ($id, $status, $trigger, $targetType, $compression, $startedBy, $queuedAt, 0, 0, 0, 0);
+                queued_at, blobs_total, blobs_done, bytes_total, bytes_done, content)
+            VALUES ($id, $status, $trigger, $targetType, $compression, $startedBy, $queuedAt, 0, 0, 0, 0, $content);
             """;
 
         public const string Find = "SELECT " + Columns + " FROM backup_runs WHERE id = $id;";
 
         public const string ListNewest = "SELECT " + Columns + " FROM backup_runs ORDER BY id DESC LIMIT $limit;";
+
+        // One row per backup: no index needed.
+        public const string ArchiveNameUsed = "SELECT 1 FROM backup_runs WHERE archive_name = $archiveName LIMIT 1;";
 
         public const string ListQueued = "SELECT id FROM backup_runs WHERE status = $status ORDER BY id;";
 
