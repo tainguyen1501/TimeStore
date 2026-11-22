@@ -33,3 +33,7 @@ frontend/dist/
 
 # BenchmarkDotNet output (results are recorded in docs/performance.md)
 BenchmarkDotNet.Artifacts/
+
+# Backup archives downloaded while testing (curl -OJ)
+/timestore-*.tar
+/timestore-*.tar.zst
