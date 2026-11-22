@@ -129,7 +129,8 @@ refuses to start on such a directory.
 
 `--data-path` defaults to `TimeStore:DataPath` (`/data` in the image). Then start the server with the same
 configuration: the master key the access keys were encrypted with (a server with another key refuses to start and
-says so), the root key pair, `NodeId`. The restored server has no admin sessions, no backup history and no replication rules (create them again on purpose, so an older state is never pushed over a newer replica); sign in again.
+says so), the root key pair, `NodeId`. The restored server has no admin sessions, no backup history and no replication rules (create them again on purpose, so an older state is never pushed over a newer replica; the
+restore says so); sign in again.
 
 An archive of an earlier version may hold the master key (those versions could put it in): the restore writes it to
 `master.key` in the data directory and says so. Move it out of the data directory and set `MasterKeyFile` to it, or
@@ -181,7 +182,11 @@ Everything written after the backup's instant is undone: objects written later a
 sweep removes), objects deleted later are back. `--once` skips an archive already restored there: what the Helm
 chart's `restore.metadataArchive` runs in an init container. While it swaps, the directory holds
 `.timestore-restore-metadata`; a restore cut there is run again, and the server refuses to start meanwhile. Like a
-full restore, it brings back no admin session, backup history or replication rule.
+full restore, it brings back no admin session, backup history or replication rule. The restore reads the rules of
+the metadata it replaces and names them (`replication rules NOT restored …`, one line per bucket with its destination,
+prefix and deletes setting): set each up again with "Copy the objects already in the bucket too", which copies every
+object again (user-guide/replication.md, "Good to know"). This is what other S3 servers do too: MinIO's bucket
+metadata import does not restore replication either.
 
 ## Copy the data directory yourself
 

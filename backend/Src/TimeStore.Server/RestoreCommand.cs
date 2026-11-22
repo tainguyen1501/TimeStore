@@ -28,6 +28,8 @@ internal static class RestoreCommand
     private const string MetadataOption = "--metadata";
     private const string OnceOption = "--once";
     private const string AllowMissingOption = "--allow-missing";
+    private const string SetUpAgain =
+        "set them up again (bucket → ⋯ → Replication) with \"Copy the objects already in the bucket too\": it copies every object again";
     private const int Success = 0;
     private const int Failure = 1;
     private const int Usage = 2;
@@ -116,6 +118,7 @@ internal static class RestoreCommand
         {
             Console.WriteLine($"  the server needs the master key these access keys were encrypted with ({ServerOptions.Section}:{nameof(ServerOptions.MasterKey)})");
         }
+        Console.WriteLine($"  archives hold no replication rules: {SetUpAgain}");
         return Success;
     }
 
@@ -157,7 +160,28 @@ internal static class RestoreCommand
             + $"{summary.Referenced - summary.Missing} of {summary.Referenced} referenced blobs present"
             + (summary.Missing > 0 ? $", {summary.Missing} MISSING ({AllowMissingOption}): those objects fail to read" : ""));
         Console.WriteLine($"  the replaced metadata is in {summary.PreviousCopy} (delete it once the server is checked)");
+        PrintDroppedRules(summary.DroppedRules);
         return Success;
+    }
+
+    /// <summary>Archives hold no replication rules: the ones the restore replaced are named, to set up again.</summary>
+    private static void PrintDroppedRules(IReadOnlyList<Domain.Stores.ReplicationRuleSummary>? rules)
+    {
+        if (rules is null)
+        {
+            Console.WriteLine($"  the replaced replication rules could not be read: check each bucket's replication; archives hold none, {SetUpAgain}");
+            return;
+        }
+        if (rules.Count == 0)
+            return;
+
+        Console.WriteLine($"  replication rules NOT restored (archives hold none), {SetUpAgain}:");
+        foreach (var rule in rules)
+        {
+            var prefix = rule.Prefix.Length == 0 ? "whole bucket" : $"prefix {rule.Prefix}";
+            var deletes = rule.ReplicateDeletes ? "deletes copied" : "deletes not copied";
+            Console.WriteLine($"    {rule.Bucket} → {rule.Endpoint.TrimEnd('/')}/{rule.TargetBucket} ({prefix}, {deletes})");
+        }
     }
 
     private static int PrintUsage(string problem)

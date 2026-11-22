@@ -7,6 +7,7 @@ using Amazon.S3.Model;
 using TimeStore.Application.Features.Backups;
 using TimeStore.Blob.FileSystem;
 using TimeStore.Contracts.Backups;
+using TimeStore.Contracts.Replication;
 using TimeStore.Domain.Backups;
 using TimeStore.Server.Tests.Infrastructure;
 
@@ -58,7 +59,8 @@ public sealed class MetadataBackupTests(MetadataBackupTests.RetainingServer serv
         await server.KillAsync();
         var restored = await RestoreAsync(first, "--once");
         Assert.True(restored.ExitCode == 0, restored.Output);
-        Assert.Contains("2 of 2 referenced blobs present", restored.Output);
+        // Every referenced blob is there (the count depends on what the other tests of this class did before).
+        Assert.Matches(@"(\d+) of \1 referenced blobs present", restored.Output);
         var again = await RestoreAsync(first, "--once");
         Assert.True(again.ExitCode == 0, again.Output);
         Assert.Contains("Restore skipped", again.Output);
@@ -108,6 +110,37 @@ public sealed class MetadataBackupTests(MetadataBackupTests.RetainingServer serv
         Assert.Equal((0L, 0L), (run.BlobsTotal, run.BytesTotal));
         Assert.True(run.ArchiveSize < 200_000, $"archive of {run.ArchiveSize} bytes");
     }
+
+    [Fact]
+    public async Task RestoringMetadata_NamesTheReplicationRulesItDrops()
+    {
+        // The server replicates to itself: a rule needs a destination that answers.
+        using (var s3 = server.Client())
+        {
+            await s3.PutBucketAsync("rules-src", _ct);
+            await s3.PutBucketAsync("rules-dst", _ct);
+        }
+        using (var admin = await server.AdminClientAsync())
+        {
+            var rule = new SetReplicationRequest(server.S3Url, "rules-dst", TimeStoreServer.Region, TimeStoreServer.AccessKey,
+                TimeStoreServer.SecretKey, "docs/", ReplicateDeletes: false);
+            Assert.Equal(HttpStatusCode.OK, (await admin.PutAsJsonAsync(RulesRoute, rule, Json, _ct)).StatusCode);
+        }
+
+        var archive = await BackUpAsync();
+        await server.KillAsync(); // the rule may still be in the WAL only: read anyway
+        // The other test of this class deletes a blob on purpose: whatever ran before, restore.
+        var restored = await RestoreAsync(archive, "--allow-missing");
+        await server.RestartAsync();
+
+        Assert.True(restored.ExitCode == 0, restored.Output);
+        Assert.Contains("replication rules NOT restored", restored.Output);
+        Assert.Contains($"rules-src → {server.S3Url}/rules-dst (prefix docs/, deletes not copied)", restored.Output);
+        using (var admin = await server.AdminClientAsync())
+            Assert.Equal(HttpStatusCode.NotFound, (await admin.GetAsync(RulesRoute, _ct)).StatusCode);
+    }
+
+    private const string RulesRoute = "/api/v1/buckets/rules-src/replication";
 
     private async Task<string> BackUpAsync()
     {

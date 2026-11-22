@@ -78,6 +78,7 @@ public sealed class BackupApiTests(BackupServer server) : IClassFixture<BackupSe
         await using var restored = new RestoredServer(archive);
         await restored.InitializeAsync();
         Assert.Contains("all checksums verified", restored.RestoreOutput);
+        Assert.Contains("archives hold no replication rules", restored.RestoreOutput);
         using var copy = restored.Client();
 
         Assert.Equal("hello backup", await ReadAsync(copy, bucket, "kept.txt"));

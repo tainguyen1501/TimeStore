@@ -322,6 +322,7 @@ public sealed class BackupRunnerTests : IAsyncLifetime
         var second = await restorer.RestoreAsync(request, now, _ct);
 
         Assert.True(first.IsSuccess && second.IsSuccess);
+        Assert.Null(first.Value.DroppedRules); // unreadable: unknown, not "none"
         Assert.NotEqual(first.Value.PreviousCopy, second.Value.PreviousCopy);
         Assert.Equal("before", await File.ReadAllTextAsync(Path.Combine(first.Value.PreviousCopy!, BackupLayout.MetadataEntry), _ct));
         Assert.Equal(FakeMetadataSnapshots.Database, await File.ReadAllBytesAsync(database, _ct));
@@ -359,6 +360,9 @@ public sealed class BackupRunnerTests : IAsyncLifetime
     {
         public IAsyncEnumerable<Domain.Stores.ReferencedBlob> ListReferencedBlobsAsync(string path, CancellationToken ct) =>
             AsyncEnumerable.Empty<Domain.Stores.ReferencedBlob>();
+
+        public ValueTask<IReadOnlyList<Domain.Stores.ReplicationRuleSummary>> ListReplicationRulesAsync(string path, CancellationToken ct) =>
+            throw new InvalidDataException("not a database"); // the restore goes on without naming them
     }
 
     private async Task<Primitives.Result<RestoreSummary>> Restore(byte[] archive, string dataPath)

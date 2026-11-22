@@ -116,6 +116,10 @@ Start one with `{"content":"metadata"}` instead of `{}` in step 3. To go back to
 changes nothing if not. Details: `docs/backup.md`, "Metadata-only backups". It is not a copy of your data: keep full
 backups or replication for a lost disk.
 
+**Replication after any restore:** backups hold no replication rules, so a restored server copies nothing to other
+storage until they are set up again. The restore lists the rules it dropped; create each again with **Copy the objects
+already in the bucket too** ([Replication](replication.md), "Good to know").
+
 ## Settings
 
 Set by whoever runs the server (`appsettings.json`, or environment variables `TimeStore__Backup__…`):

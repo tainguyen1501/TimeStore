@@ -30,8 +30,46 @@ public sealed class SqliteMetadataFiles : IMetadataFiles
             JOIN buckets b ON b.id = u.bucket_id;
         """;
 
+    private const string HasRules = "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'replication_rules';";
+
+    private const string Rules = """
+        SELECT b.name, r.endpoint, r.target_bucket, r.prefix, r.replicate_deletes
+        FROM replication_rules r JOIN buckets b ON b.id = r.bucket_id ORDER BY b.name;
+        """;
+
     public async IAsyncEnumerable<ReferencedBlob> ListReferencedBlobsAsync(
         string path, [EnumeratorCancellation] CancellationToken ct)
+    {
+        await using var connection = await OpenAsync(path, ct);
+        await using var command = connection.CreateCommand();
+        command.CommandText = Referenced;
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+            yield return new ReferencedBlob(reader.GetId(0), reader.GetInt64(1), reader.GetString(2), reader.GetString(3));
+    }
+
+    public async ValueTask<IReadOnlyList<ReplicationRuleSummary>> ListReplicationRulesAsync(string path, CancellationToken ct)
+    {
+        await using var connection = await OpenAsync(path, ct);
+        await using (var exists = connection.CreateCommand())
+        {
+            exists.CommandText = HasRules;
+            if (await exists.ExecuteScalarAsync(ct) is null)
+                return []; // a schema from before replication (v12)
+        }
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = Rules;
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        var rules = new List<ReplicationRuleSummary>();
+        while (await reader.ReadAsync(ct))
+            rules.Add(new ReplicationRuleSummary(
+                reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetInt64(4) != 0));
+        return rules;
+    }
+
+    // Read-only and unpooled: the file is closed again at once (a restore moves it next).
+    private static async ValueTask<SqliteConnection> OpenAsync(string path, CancellationToken ct)
     {
         var builder = new SqliteConnectionStringBuilder
         {
@@ -39,12 +77,16 @@ public sealed class SqliteMetadataFiles : IMetadataFiles
             Mode = SqliteOpenMode.ReadOnly,
             Pooling = false,
         };
-        await using var connection = new SqliteConnection(builder.ConnectionString);
-        await connection.OpenAsync(ct);
-        await using var command = connection.CreateCommand();
-        command.CommandText = Referenced;
-        await using var reader = await command.ExecuteReaderAsync(ct);
-        while (await reader.ReadAsync(ct))
-            yield return new ReferencedBlob(reader.GetId(0), reader.GetInt64(1), reader.GetString(2), reader.GetString(3));
+        var connection = new SqliteConnection(builder.ConnectionString);
+        try
+        {
+            await connection.OpenAsync(ct);
+            return connection;
+        }
+        catch
+        {
+            await connection.DisposeAsync();
+            throw;
+        }
     }
 }

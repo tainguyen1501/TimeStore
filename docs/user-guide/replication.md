@@ -68,8 +68,13 @@ Actions (admins):
 ## Good to know
 
 - Never point a rule at its own bucket, or two servers at each other: two-way replication is not supported yet.
-- A backup archive holds no replication rules: after a restore, set them up again on purpose, so an older state is
-  never pushed over a newer copy.
+- **After a restore, set replication up again.** A backup archive holds no replication rules, so a restored server
+  (a full restore, or an undo with a metadata-only backup) replicates nothing until you do: on purpose, so an older
+  state is never pushed over a newer copy without you deciding it. The restore names the rules it dropped (bucket,
+  destination, prefix, deletes). Create each again with **Copy the objects already in the bucket too** (on by
+  default): every object is copied once more, so the destination matches the restored server. Nothing is deleted
+  there: objects written after the backup's instant stay at the destination. You need the destination's secret key
+  again (it is never shown): keep a copy apart from the server.
 - A large object is sent the way it was uploaded: one PUT, or a multipart upload with the same parts.
 - Server settings (all optional): `TimeStore:Replication:Enabled`, `Concurrency` (4), `PollSeconds` (5),
   `BatchDelayMilliseconds` (200), `MaxBackoffSeconds` (900), `RequestTimeoutSeconds` (900); see

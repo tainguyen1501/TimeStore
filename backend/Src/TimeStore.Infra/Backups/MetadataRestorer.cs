@@ -19,9 +19,13 @@ public sealed record MetadataRestoreRequest(
 /// <param name="Manifest">What was restored; null when <see cref="MetadataRestoreRequest.Once"/> skipped it.</param>
 /// <param name="Missing">Referenced blobs not found (restored anyway with <c>AllowMissing</c>).</param>
 /// <param name="PreviousCopy">Where the replaced metadata was moved (to go back by hand).</param>
-public sealed record MetadataRestoreSummary(BackupManifest? Manifest, long Referenced, long Missing, string? PreviousCopy)
+/// <param name="DroppedRules">The replication rules of the replaced metadata: archives hold none, so the restored server
+/// has none, and the operator sets them up again. Null when they could not be read (the restore goes on).</param>
+public sealed record MetadataRestoreSummary(
+    BackupManifest? Manifest, long Referenced, long Missing, string? PreviousCopy,
+    IReadOnlyList<ReplicationRuleSummary>? DroppedRules = null)
 {
-    public static readonly MetadataRestoreSummary Skipped = new(null, 0, 0, null);
+    public static readonly MetadataRestoreSummary Skipped = new(null, 0, 0, null, []);
 
     public bool WasSkipped => Manifest is null;
 }
@@ -90,8 +94,9 @@ public sealed class MetadataRestorer(IBackupArchiveFormat format, IMetadataFiles
             if (missing > 0 && !request.AllowMissing)
                 return BackupErrors.RestoreMissingBlobs(missing, referenced, examples);
 
+            var dropped = await ReplicationRulesAsync(database, ct); // before the swap moves the database away
             var previous = await SwapAsync(data, database, temp, manifest, now, ct);
-            return new MetadataRestoreSummary(manifest, referenced, missing, previous);
+            return new MetadataRestoreSummary(manifest, referenced, missing, previous, dropped);
         }
         catch (InvalidDataException)
         {
@@ -149,6 +154,23 @@ public sealed class MetadataRestorer(IBackupArchiveFormat format, IMetadataFiles
         if (metadataSha256 != manifest.MetadataSha256 || metadataSha256 != listedSha256)
             return BackupErrors.RestoreChecksumMismatch(BackupLayout.MetadataEntry);
         return manifest;
+    }
+
+    /// <summary>
+    /// The rules the restore drops, to name them to the operator. Best effort: a database it cannot read (gone after a cut restore, damaged) never stops the restore.
+    /// </summary>
+    private async ValueTask<IReadOnlyList<ReplicationRuleSummary>?> ReplicationRulesAsync(string database, CancellationToken ct)
+    {
+        if (!File.Exists(database))
+            return null;
+        try
+        {
+            return await files.ListReplicationRulesAsync(database, ct);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            return null;
+        }
     }
 
     private async ValueTask<bool> HasAsync(ReferencedBlob blob, CancellationToken ct)

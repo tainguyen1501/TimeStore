@@ -206,6 +206,9 @@ replaced one stays in `/data/metadata-before-restore-<time>/`), then the server 
 stays in `Init:Error` and the log names them (`kubectl -n storage logs ts-timestore-0 -c restore`); nothing changed.
 The same archive is applied once (`--once`): restarts leave it alone. Remove the value after the check.
 
+Archives hold no replication rules (full or metadata-only): the init container's log names the rules the undo dropped
+(`kubectl logs <pod> -c restore`). Set each up again with "Copy the objects already in the bucket too".
+
 ### An archive on your machine (manifests)
 
 Without a URL: an empty data claim, a temporary pod, then copy and restore. The manifests are in
