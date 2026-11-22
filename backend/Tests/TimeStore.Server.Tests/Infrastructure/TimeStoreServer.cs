@@ -130,8 +130,7 @@ public class TimeStoreServer : IAsyncLifetime
         {
             // A free port is only free when it is probed: until the server binds it, a fixture running in parallel or
             // an outgoing connection (its local port comes from the same range) may take it. Then try other ports.
-            S3Port = FreePort();
-            AdminPort = FreePort();
+            (S3Port, AdminPort) = TwoFreePorts();
             var outputBefore = Output().Length;
             try
             {
@@ -263,11 +262,17 @@ public class TimeStoreServer : IAsyncLifetime
         throw new TimeoutException($"The server did not become healthy in {StartTimeout}:\n{Output()}");
     }
 
-    private static int FreePort()
+    /// <summary>
+    /// Two distinct free ports: both are probed while both listeners are open, so the second probe can never be handed
+    /// the port the first just released (which the server refuses: S3 and admin ports must differ).
+    /// </summary>
+    private static (int First, int Second) TwoFreePorts()
     {
-        using var listener = new TcpListener(IPAddress.Loopback, 0);
-        listener.Start();
-        return ((IPEndPoint)listener.LocalEndpoint).Port;
+        using var first = new TcpListener(IPAddress.Loopback, 0);
+        using var second = new TcpListener(IPAddress.Loopback, 0);
+        first.Start();
+        second.Start();
+        return (((IPEndPoint)first.LocalEndpoint).Port, ((IPEndPoint)second.LocalEndpoint).Port);
     }
 
     private void Append(string? line)
