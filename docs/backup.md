@@ -159,7 +159,12 @@ curl -s "${SIGN[@]}" -H 'Content-Type: application/json' -d '{"content":"metadat
 curl -fsS "${SIGN[@]}" -OJ "$ADMIN/api/v1/backups/stream?content=metadata"      # or streamed
 ```
 
-Refused with `BACKUP_RETENTION_REQUIRED` while the retention is 0. The archive holds `manifest.json` (with
+**The retention is advised, not required.** At `RetainDeletedDays` 0 the backup still runs (the server logs a warning):
+the blobs overwritten or deleted after it are deleted at once, so an in-place restore of it misses them, unless the
+blobs are kept elsewhere: a copy of `blobs/` (blob files never change, so `rclone copy` adds only new ones), a volume
+snapshot. Useful at 0 too: recovering a damaged database from a recent metadata backup (`--allow-missing` names what is
+lost), or keeping a record of the metadata at an instant. The restore checks every referenced blob either way, and
+the manifest records the retention in force. The archive holds `manifest.json` (with
 `"content": "metadata"`, the blobs it references and the retention), `metadata.db` and `blobs.sha256`; it holds no
 blob, and taking it holds no blob deletion.
 

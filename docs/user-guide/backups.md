@@ -109,8 +109,9 @@ volume before the server starts (the chart's README has the steps).
 
 ## Undo to a point in time (metadata-only backups)
 
-If the server keeps overwritten and deleted data for a while (`Blobs:RetainDeletedDays`, set by whoever runs it), a
-backup of the **metadata alone** is enough to undo mistakes: it is small and takes seconds, so it can run every hour.
+A backup of the **metadata alone** is enough to undo mistakes, as long as the server keeps overwritten and deleted
+data for a while (`Blobs:RetainDeletedDays`, set by whoever runs it; without it the backup still runs, but data
+replaced after it cannot come back). It is small and takes seconds, so it can run every hour.
 Start one with `{"content":"metadata"}` instead of `{}` in step 3. To go back to it, the server is stopped and
 `restore --metadata` puts the metadata back; it first checks that every file the backup needs is still on disk, and
 changes nothing if not. Details: `docs/backup.md`, "Metadata-only backups". It is not a copy of your data: keep full

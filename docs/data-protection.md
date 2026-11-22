@@ -83,7 +83,8 @@ incremental blob copy (B5c), encryption (B6).
 ## Metadata-only backups
 
 **Beta**, built (stages B5a and B5b). With `Blobs:RetainDeletedDays` above 0, overwritten and deleted blobs stay on disk
-for that many days. A backup with `{"content":"metadata"}` then archives the metadata alone (seconds, the size of the
+for that many days (advised, not required: at 0 the blobs must be kept elsewhere for a full undo). A backup with
+`{"content":"metadata"}` archives the metadata alone (seconds, the size of the
 database); `TimeStore.Server restore --metadata`, with the server stopped, puts it back on the data directory it came
 from after checking that every blob it references is still there, and changes nothing if not. Everything written
 after the backup is undone; objects deleted after it are back. On Kubernetes: `restore.metadataArchive` in the Helm

@@ -8,6 +8,7 @@ using Amazon.S3.Model;
 using TimeStore.Application.Features.Backups;
 using TimeStore.Contracts.AccessKeys;
 using TimeStore.Contracts.Backups;
+using TimeStore.Domain.Backups;
 using TimeStore.Application.Features.Auth;
 using TimeStore.Contracts.Common;
 using TimeStore.Domain.AccessKeys;
@@ -209,6 +210,19 @@ public sealed class BackupApiTests(BackupServer server) : IClassFixture<BackupSe
         await AssertErrorAsync(await _backup.PostAsync($"{Backups}/{run.Id}/cancel", null, _ct), HttpStatusCode.Conflict, BackupErrors.Codes.NotActive);
         await AssertErrorAsync(await _backup.GetAsync($"{Backups}/{Guid.CreateVersion7()}", _ct), HttpStatusCode.NotFound, BackupErrors.Codes.NotFound);
         await AssertErrorAsync(await _backup.GetAsync($"{Backups}/{Guid.CreateVersion7()}/archive", _ct), HttpStatusCode.NotFound, BackupErrors.Codes.NotFound);
+    }
+
+    [Fact]
+    public async Task AMetadataOnlyBackup_WithoutABlobRetention_Succeeds_AndTheServerWarns()
+    {
+        // This server keeps no released blobs (Blobs:RetainDeletedDays 0): the backup runs anyway (the blobs may be
+        // kept elsewhere; a restore checks every one), and the log says what that means.
+        var started = await _backup.PostAsJsonAsync(Backups, new StartBackupRequest(Content: BackupContents.Metadata), Json, _ct);
+        Assert.Equal(HttpStatusCode.Accepted, started.StatusCode);
+        var run = await WaitForAsync((await started.Content.ReadFromJsonAsync<BackupRunResponse>(Json, _ct))!.Id);
+
+        Assert.Equal((BackupRunStatuses.Succeeded, BackupContents.Metadata), (run.Status, run.Content));
+        await TimeStoreServer.WaitUntilAsync(() => server.Log.Contains($"Metadata-only backup {run.Id} was taken with Blobs:RetainDeletedDays 0"), _ct);
     }
 
     [Fact]

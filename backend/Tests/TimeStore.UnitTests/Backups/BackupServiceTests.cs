@@ -51,17 +51,18 @@ public sealed class BackupServiceTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task AMetadataOnlyBackup_NeedsABlobRetention_AndAKnownContent()
+    public async Task AMetadataOnlyBackup_RunsAtAnyBlobRetention_ButNeedsAKnownContent()
     {
+        // At retention 0 it runs too (the server logs a warning): the blobs may be kept elsewhere, and the restore
+        // checks every one of them.
         var withoutRetention = await Service().StartAsync(new StartBackupRequest(Content: BackupContents.Metadata), Admin, _ct);
-        Assert.Equal(BackupErrors.Codes.RetentionRequired, withoutRetention.Error.Code);
+        Assert.Equal(BackupContents.Metadata, withoutRetention.Value.Content);
         Assert.Equal(BackupErrors.Codes.InvalidContent,
             (await Service().StartAsync(new StartBackupRequest(Content: "blobs"), Admin, _ct)).Error.Code);
 
-        var retained = new BackupService(_runs, _runner, _queue, [_directory], Options with { BlobRetention = TimeSpan.FromDays(8) },
-            TimeProvider.System);
-        var started = await retained.StartAsync(new StartBackupRequest(Content: BackupContents.Metadata), Admin, _ct);
-        Assert.Equal(BackupContents.Metadata, started.Value.Content);
+        Assert.True(BackupValidation.HasNoBlobRetention(BackupContents.Metadata, Options));
+        Assert.False(BackupValidation.HasNoBlobRetention(BackupContents.Metadata, Options with { BlobRetention = TimeSpan.FromDays(8) }));
+        Assert.False(BackupValidation.HasNoBlobRetention(BackupContents.Full, Options));
     }
 
     [Fact]

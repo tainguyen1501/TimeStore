@@ -85,8 +85,8 @@ public interface IBackupQueue
 /// <param name="TempPath">Scratch space of a run (its checksum list), emptied of <c>*.tmp</c> files at startup.</param>
 /// <param name="Keep">How many archives a stored target keeps: older ones are deleted after a run succeeds.</param>
 /// <param name="BlobRetention">
-/// How long released blobs are kept (<c>Blobs:RetainDeletedDays</c>): a metadata-only backup needs it above zero, and
-/// its manifest records it.
+/// How long released blobs are kept (<c>Blobs:RetainDeletedDays</c>): a metadata-only backup's manifest records it, and
+/// the server warns when it is zero (an in-place restore then needs the blobs kept elsewhere).
 /// </param>
 public sealed record BackupOptions(
     string NodeId,

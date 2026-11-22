@@ -12,7 +12,6 @@ public static class BackupErrors
         public const string TargetNotConfigured = "BACKUP_TARGET_NOT_CONFIGURED";
         public const string InvalidCompression = "BACKUP_INVALID_COMPRESSION";
         public const string InvalidContent = "BACKUP_INVALID_CONTENT";
-        public const string RetentionRequired = "BACKUP_RETENTION_REQUIRED";
         public const string NotActive = "BACKUP_NOT_ACTIVE";
         public const string ArchiveNotFound = "BACKUP_ARCHIVE_NOT_FOUND";
 
@@ -53,10 +52,6 @@ public static class BackupErrors
 
     public static readonly AppError InvalidContent =
         AppError.Validation(Codes.InvalidContent, "Content must be 'full' or 'metadata'.");
-
-    public static readonly AppError RetentionRequired = AppError.Validation(Codes.RetentionRequired,
-        "A metadata-only backup needs TimeStore:Blobs:RetainDeletedDays above 0: without it, the blobs it references are "
-        + "deleted a minute after they are overwritten or deleted, and the backup could not be restored.");
 
     public static readonly AppError NotActive =
         AppError.Conflict(Codes.NotActive, "The backup has already finished.");

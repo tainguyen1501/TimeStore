@@ -30,7 +30,7 @@ public sealed class BackupService(
         var compression = BackupValidation.Compression(request.Compression, options);
         if (compression.IsFailure)
             return compression.Error;
-        var content = BackupValidation.Content(request.Content, options);
+        var content = BackupValidation.Content(request.Content);
         if (content.IsFailure)
             return content.Error;
 
@@ -48,7 +48,7 @@ public sealed class BackupService(
         var chosen = BackupValidation.Compression(compression, options);
         if (chosen.IsFailure)
             return (chosen.Error, null);
-        var holds = BackupValidation.Content(content, options);
+        var holds = BackupValidation.Content(content);
         if (holds.IsFailure)
             return (holds.Error, null);
 

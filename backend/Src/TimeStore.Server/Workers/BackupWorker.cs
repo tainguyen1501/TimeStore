@@ -7,7 +7,8 @@ namespace TimeStore.Server.Workers;
 /// Runs queued backups one at a time. Before the server serves, runs left running by a previous process become
 /// interrupted (never re-run) and queued ones are woken again, oldest first (docs/research/backup.md section 4).
 /// </summary>
-internal sealed class BackupWorker(IBackupRunner runner, IBackupQueue queue, ILogger<BackupWorker> logger) : BackgroundService
+internal sealed class BackupWorker(IBackupRunner runner, IBackupQueue queue, BackupOptions options, ILogger<BackupWorker> logger)
+    : BackgroundService
 {
     public override async Task StartAsync(CancellationToken cancellationToken)
     {
@@ -25,7 +26,11 @@ internal sealed class BackupWorker(IBackupRunner runner, IBackupQueue queue, ILo
                 try
                 {
                     if (await runner.RunQueuedAsync(runId, stoppingToken) is { } execution)
+                    {
                         BackupLog.Ended(logger, execution);
+                        if (execution.Run.Status == BackupStatus.Succeeded)
+                            BackupLog.WarnWithoutRetention(logger, execution.Run.Id, execution.Run.Content, options);
+                    }
                 }
                 catch (Exception exception) when (exception is not OperationCanceledException)
                 {
@@ -61,6 +66,19 @@ internal static partial class BackupLog
         Message = "Backup {RunId} ended {Status} ({Target}, started by {StartedBy}): {ErrorCode}")]
     private static partial void NotSucceeded(
         ILogger logger, Exception? exception, Guid runId, BackupStatus status, string target, string startedBy, string? errorCode);
+
+    /// <summary>A metadata-only backup at <c>Blobs:RetainDeletedDays</c> 0 succeeds, with this warning.</summary>
+    public static void WarnWithoutRetention(ILogger logger, Guid runId, string content, BackupOptions options)
+    {
+        if (BackupValidation.HasNoBlobRetention(content, options))
+            NoBlobRetention(logger, runId);
+    }
+
+    [LoggerMessage(Level = LogLevel.Warning,
+        Message = "Metadata-only backup {RunId} was taken with Blobs:RetainDeletedDays 0: blobs overwritten or deleted after "
+            + "it are deleted at once, so an in-place restore of it may miss them unless they are kept elsewhere "
+            + "(docs/backup.md, \"Metadata-only backups\")")]
+    private static partial void NoBlobRetention(ILogger logger, Guid runId);
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Backup worker failed on run {RunId}")]
     public static partial void WorkerFailed(ILogger logger, Guid runId, Exception exception);

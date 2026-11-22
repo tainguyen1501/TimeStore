@@ -31,7 +31,7 @@ stages.
 | | B3 | ⏳ | Schedules and retention |
 | | B4 | ⏳ | `s3` target: archives sent to another S3 endpoint while they are written |
 | | B5a | ✅ (2026-11-20) | Released blobs kept in `pending_blob_deletions` (written in the commit's transaction) and deleted by a collector after `Blobs:RetainDeletedDays` (default 0: as today); retained-bytes metric ([research/blob-retention.md](research/blob-retention.md)) |
-| | B5b | ✅ (2026-11-20) | Metadata-only backups (`content: metadata`, seconds, refused at retention 0) and `restore --metadata` with a check of every referenced blob |
+| | B5b | ✅ (2026-11-20) | Metadata-only backups (`content: metadata`, seconds; a warning at retention 0) and `restore --metadata` with a check of every referenced blob |
 | | B5c | ⏳ | Incremental blob copy to an S3 endpoint (blobs never change: only new ones are sent); until then `rclone copy` of `blobs/` |
 | | B6 | ⏳ | Archive encryption |
 | Replication | R1 | ✅ (2026-11-19) | Per-bucket rule to one S3 destination (admin API, tested on save), outbox in the five write methods' transaction, worker (coalescing, temporary vs permanent failures, Content-MD5 + ETag check, source parts kept), existing objects queued with the rule, own SigV4 client (Native AOT) ([research/replication.md](research/replication.md), "R1 as built") |

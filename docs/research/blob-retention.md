@@ -98,8 +98,9 @@ A backup run with `content: metadata`: the archive holds `manifest.json` and `me
 snapshot), no blobs, so it is small and takes seconds. The manifest records the retention in force and the newest
 blob id at T.
 
-- Refused with `BACKUP_RETENTION_REQUIRED` while `Blobs:RetainDeletedDays` is 0: such a backup would be useless after
-  a minute.
+- Allowed at any `Blobs:RetainDeletedDays`, with a warning in the log at 0 (first built refused at 0, changed
+  2026-11-22): the blobs may be kept elsewhere (a copy of `blobs/`, a volume snapshot, B5c), a recent backup still
+  recovers a damaged database, and the restore checks every referenced blob anyway.
 - The snapshot keeps `pending_blob_deletions` (the collector goes on after a restore).
 - The full archive (`content: full`, today's only kind) stays the default and is unchanged.
 
@@ -174,7 +175,7 @@ As designed in section 3 and 4, with these details:
 - **Backup:** `content: metadata` on `POST /api/v1/backups` and the stream; migration 14 adds `backup_runs.content`.
   Same snapshot (`VACUUM INTO`, one read transaction: in WAL mode writes go on, the WAL grows until it ends), no blob
   hold, no blob entry; the manifest records `content`, the blobs referenced (`referencedBlobs`, `referencedBytes`) and
-  `retainDeletedDays`. Refused while the retention is 0. The SQLite online backup API was not used: with WAL, a write
+  `retainDeletedDays`. Allowed at retention 0, with a warning in the log. The SQLite online backup API was not used: with WAL, a write
   by another connection restarts it, so a busy server might never finish.
 - **Restore:** `restore --metadata` (`MetadataRestorer`): the archive into `tmp/`, checked (manifest, SHA-256 against
   the manifest and `blobs.sha256`); every referenced blob checked through `IMetadataFiles` (the provider reads the
@@ -198,7 +199,7 @@ As designed in section 3 and 4, with these details:
 | 1 | Durable table written in the commit's transaction, by the store | A crash never turns a released blob into an orphan that the sweep deletes |
 | 2 | `released_at`, wait computed from configuration | Raising the retention protects blobs already released |
 | 3 | Default retention 0 | No extra disk for anyone who does not use metadata-only backups |
-| 4 | Metadata-only backups refused at retention 0 | They would be unusable after a minute |
+| 4 | Metadata-only backups allowed at retention 0, with a warning (first built refused at 0) | Refusing stopped valid uses (blobs kept elsewhere, recovering a damaged database); the restore's blob check is the real safeguard |
 | 5 | Full archives stay the default | Self-contained; right for small and medium servers |
 | 6 | `node_id` in the table now | Several nodes collect their own disks without a migration |
 

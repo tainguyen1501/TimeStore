@@ -182,7 +182,7 @@ access key with the `backup` or `admin` role; reads included, since an archive i
 
 | Method | Path | Body | Success | Errors |
 |---|---|---|---|---|
-| POST | `/api/v1/backups` | `{ "target"?: "directory", "compression"?: "zstd" \| "none", "content"?: "full" \| "metadata" }` | `202 BackupRunResponse` (queued), `Location` | 400 `BACKUP_INVALID_TARGET`, `BACKUP_INVALID_COMPRESSION`, `BACKUP_INVALID_CONTENT`, `BACKUP_RETENTION_REQUIRED` (metadata only while `Blobs:RetainDeletedDays` is 0), `BACKUP_TARGET_NOT_CONFIGURED`; 409 `BACKUP_ACTIVE` |
+| POST | `/api/v1/backups` | `{ "target"?: "directory", "compression"?: "zstd" \| "none", "content"?: "full" \| "metadata" }` | `202 BackupRunResponse` (queued), `Location` | 400 `BACKUP_INVALID_TARGET`, `BACKUP_INVALID_COMPRESSION`, `BACKUP_INVALID_CONTENT`, `BACKUP_TARGET_NOT_CONFIGURED`; 409 `BACKUP_ACTIVE` |
 | GET | `/api/v1/backups` | — | `200 BackupRunResponse[]` (newest first, at most 100) | — |
 | GET | `/api/v1/backups/{id}` | — | `200 BackupRunResponse` | 404 `BACKUP_NOT_FOUND` |
 | POST | `/api/v1/backups/{id}/cancel` | — | `200 BackupRunResponse` (queued: cancelled at once; running: stops at its next blob, poll for the end) | 404, 409 `BACKUP_NOT_ACTIVE` |
