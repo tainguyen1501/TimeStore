@@ -2,7 +2,7 @@
 
 > **Beta.** Backups and restore are tested end to end, but the API, the options and the archive format may still change before 1.0. They are a point-in-time copy, not a mirror: for data you cannot lose, also mirror it to another storage ([mirroring.md](mirroring.md)).
 
-Backups are one of four ways to protect TimeStore's data; [data-protection.md](data-protection.md) compares them and
+Backups are one of six ways to protect TimeStore's data; [data-protection.md](data-protection.md) compares them and
 says which to use for your size.
 
 Everything TimeStore stores lives in one data directory; the master key and the rest of the configuration are yours. The
